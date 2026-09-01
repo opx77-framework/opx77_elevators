@@ -24,6 +24,10 @@ local told = {}
 
 local sightWindows, requestWindows, logWindows = {}, {}, {}
 
+--- key -> true once the floor-count mismatch has been said. It is a config mistake, and
+--- saying it twelve times a second does not make it more true.
+local warnedCount = {}
+
 --- Sightings per second, per player: a client streaming through a lobby can legitimately see
 --- several lifts at once, and no client needs more.
 local SIGHTS_PER_SECOND = 12
@@ -156,7 +160,8 @@ function Server.adopt(key, entity, x, y, z, bucket, floorCount, activeFloor)
   if not ok then return { ok = false, error = "adopt_raised", reason = tostring(id) } end
   if id == nil then return { ok = false, error = "adopt_refused", reason = tostring(reason) } end
 
-  owned[key] = { id = id, entity = entity, bucket = bucket, floorCount = floorCount }
+  owned[key] = { id = id, entity = entity, bucket = bucket, floorCount = floorCount,
+                 atMs = nowMs() }
   if not applyLock(id) then
     -- worth a line rather than a rollback: an unlocked lift still answers this file, it just
     -- also answers a client directly, and running that way unnoticed is the real failure
@@ -202,7 +207,10 @@ RegisterNetEvent("opx77_elevators:sighted", function(entity, x, y, z, floorCount
   -- Same for the floor count: it becomes the ceiling every index is checked against.
   local declared = integer(elevator.FLOOR_COUNT)
   if declared ~= nil and declared >= 1 then
-    if declared ~= floorCount then
+    -- once per elevator, not once per sighting: a client reports up to twelve a second and
+    -- this is a config mistake, which does not become truer by being said again
+    if declared ~= floorCount and not warnedCount[key] then
+      warnedCount[key] = true
       Open77.log.warn(("%s reported %d floors, config declares %d; using the config"):format(
         key, floorCount, declared))
     end
@@ -294,6 +302,8 @@ function Server.request(player, key, index)
 
   local moved = Open77.elevators.goTo(record.id, index, { travelMs = Config.TRAVEL_MS })
   if not moved then return { ok = false, error = "move_rejected" } end
+  -- the adoption has served: the sweep below leaves it alone from here on
+  record.usedAtMs = nowMs()
   return { ok = true, id = record.id, floor = index }
 end
 
@@ -301,7 +311,14 @@ RegisterNetEvent("opx77_elevators:request", function(key, index)
   local player = tonumber(source) or 0
   if player <= 0 then return end
   local result = Server.request(player, key, index)
-  TriggerClientEvent("opx77_elevators:answer", player, key, index, result.ok, result.error)
+  -- The rate limit governs the cabin, not this answer: a refused packet still costs one
+  -- outbound event echoing whatever the client sent. Bounded, and dropped entirely once the
+  -- limit is the reason -- a client that is being told to slow down does not need telling
+  -- more often than it is allowed to ask.
+  if result.error ~= "rate_limited" then
+    TriggerClientEvent("opx77_elevators:answer", player, safe(key), integer(index),
+      result.ok, result.error)
+  end
   -- one line per player per second: the refusal path is the cheap one for an attacker, and
   -- it is the path that writes to disk
   if not result.ok and within(logWindows, player, 1, 1000) then
@@ -362,6 +379,36 @@ function Server.forget(playerId)
   logWindows[player] = nil
   for _, players in pairs(told) do players[player] = nil end
 end
+
+--- Release an adoption that has never moved a cabin.
+---
+--- The hash in a sighting cannot be verified: `Open77.elevators.all()` lists only lifts that
+--- are already adopted, so a lift nobody has taken yet is invisible to this VM. One packet
+--- with a well-formed hash therefore binds a key to a lift that may not exist, and every
+--- later sighting short-circuits on it -- the real cabin can then never be adopted, because
+--- the host refuses a second adopt for the same bucket.
+---
+--- It cannot be prevented here, so it is made to heal: an adoption that has not moved a cabin
+--- within UNUSED_MS goes back, and the next honest sighting takes the slot.
+local UNUSED_MS = 600000
+
+CreateThread(function()
+  while true do
+    Wait(60000)
+    local at = nowMs()
+    for key, record in pairs(owned) do
+      if record.usedAtMs == nil and at - (record.atMs or at) > UNUSED_MS then
+        owned[key] = nil
+        for player in pairs(told[key] or {}) do
+          TriggerClientEvent("opx77_elevators:released", player, key)
+        end
+        told[key] = nil
+        Open77.log.warn(("%s released: adopted %d minutes ago and never used")
+          :format(key, math.floor(UNUSED_MS / 60000)))
+      end
+    end
+  end
+end)
 
 AddEventHandler("onPlayerDisconnected", Server.forget)
 AddEventHandler("playerDropped", Server.forget)
