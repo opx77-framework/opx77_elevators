@@ -1,0 +1,19 @@
+# Build and local tooling
+dist/
+*.luac
+node_modules/
+
+# Editors
+.idea/
+*.swp
+.DS_Store
+
+# Local server configuration: contains credentials
+server.jsonc
+acl.jsonc
+.env
+
+# Agent tooling: 16 MB of skills, two of them nested git repos
+.claude/
+
+# refuses the floors it is supposed to refuse.
