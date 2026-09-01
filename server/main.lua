@@ -125,7 +125,12 @@ end
 ---@return table
 function Server.adopt(key, entity, x, y, z, bucket, floorCount, activeFloor)
   local configured = Access.elevator(key)
-  for _, existing in ipairs(Open77.elevators.all(bucket)) do
+  -- Type-checked rather than trusted: `all()` is a host call, and this runs off a net event
+  -- where a raise is swallowed with no adoption and no answer.
+  local adopted = Open77.elevators.all(bucket)
+  local adoptedCount = type(adopted) == "table" and #adopted or 0
+  for index = 1, adoptedCount do
+    local existing = adopted[index]
     if sameEntity(existing.engineEntity, entity) then
       -- The hash came off the wire and `all()` lists every adopted lift in the bucket. Naming
       -- another elevator's hash from here would point this key at that other cabin.
@@ -355,14 +360,25 @@ end)
 -- Keeping the index honest
 -- ---------------------------------------------------------------------------
 
+--- Drop an adoption and tell everyone who was handed its id. Both callers -- the host
+--- removing a lift, and the unused-adoption sweep -- have to do exactly this, and doing it
+--- twice by hand is how two copies of one rule drift apart. The logging is the caller's:
+--- one of them is routine and the other is a warning.
+---@param key string
+local function release(key)
+  owned[key] = nil
+  local audience = told[key]
+  if audience == nil then return end
+  for player in pairs(audience) do
+    TriggerClientEvent("opx77_elevators:released", player, key)
+  end
+  told[key] = nil
+end
+
 AddEventHandler("onElevatorRemoved", function(id, _, reason)
   for key, record in pairs(owned) do
     if record.id == tonumber(id) then
-      owned[key] = nil
-      for player in pairs(told[key] or {}) do
-        TriggerClientEvent("opx77_elevators:released", player, key)
-      end
-      told[key] = nil
+      release(key)
       Open77.log.info(("%s released: %s"):format(key, tostring(reason)))
       return
     end
@@ -398,11 +414,7 @@ CreateThread(function()
     local at = nowMs()
     for key, record in pairs(owned) do
       if record.usedAtMs == nil and at - (record.atMs or at) > UNUSED_MS then
-        owned[key] = nil
-        for player in pairs(told[key] or {}) do
-          TriggerClientEvent("opx77_elevators:released", player, key)
-        end
-        told[key] = nil
+        release(key)
         Open77.log.warn(("%s released: adopted %d minutes ago and never used")
           :format(key, math.floor(UNUSED_MS / 60000)))
       end
@@ -421,7 +433,8 @@ if type(Config.COMMAND) == "string" and Config.COMMAND ~= "" then
   --- Restricted: it prints world positions and adoption state, which is operator information.
   RegisterCommand(Config.COMMAND, function(commandSource, args, raw)
     local lines = {}
-    for _, problem in ipairs(Access.problems()) do lines[#lines + 1] = "config: " .. problem end
+    local problems = Access.problems()
+    for index = 1, #problems do lines[index] = "config: " .. problems[index] end
     local filter = args and args[1]
     local report = {}
     for key, elevator in pairs(Config.ELEVATORS) do
@@ -439,11 +452,12 @@ if type(Config.COMMAND) == "string" and Config.COMMAND ~= "" then
     -- sorted: `pairs` order would reshuffle the report between two runs, and comparing two
     -- dumps is the whole use for it
     table.sort(report)
-    for _, line in ipairs(report) do lines[#lines + 1] = line end
+    for index = 1, #report do lines[#lines + 1] = report[index] end
     lines[#lines + 1] = ("denied=%s membership=%s"):format(Config.DENIED_FLOORS,
       Config.MEMBERSHIP)
     local player = tonumber(commandSource) or 0
-    for _, line in ipairs(lines) do
+    for index = 1, #lines do
+      local line = lines[index]
       print(line)
       if player > 0 then
         TriggerClientEvent("open77:command:result", player, raw or "", true, line)
@@ -455,10 +469,11 @@ end
 if type(Open77.elevators) ~= "table" then
   Open77.log.error("native elevator API unavailable; no elevator will be adopted")
 else
-  for _, problem in ipairs(Access.problems()) do
+  local problems = Access.problems()
+  for index = 1, #problems do
     -- said at boot as well as on demand: every one produces the same symptom, a button that
     -- does nothing, and an operator standing in a lift cannot tell which mistake it was
-    Open77.log.warn("config: " .. problem)
+    Open77.log.warn("config: " .. problems[index])
   end
   Open77.log.info("ready")
 end

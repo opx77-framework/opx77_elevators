@@ -66,15 +66,19 @@ end
 -- The core
 -- ---------------------------------------------------------------------------
 
---- One call to opx77_core, with both failure levels kept apart.
---- The third return is the one that matters: ANSWERED means the core ran the
---- export and refused, which is authoritative. Not answered means the call
---- never got there.
+--- One call to another resource's client export, with both failure levels kept apart.
+--- The third return is the one that matters: ANSWERED means the target ran the export and
+--- refused, which is authoritative. Not answered means the call never got there.
+---
+--- Published on Runtime because client/panel.lua asks opx77_menu in exactly this shape, and
+--- two copies of a two-level failure contract is two places for one of them to drift.
+--- Coroutine only: `await` has no synchronous form.
+---@param resource string
 ---@param name string
 ---@return table|nil, string|nil, boolean
-local function core(name, ...)
-  if GetResourceState(CORE) ~= "running" then return nil, "core_not_running", false end
-  local promise, reason = Open77.exports.call(CORE, name, ...)
+function Runtime.call(resource, name, ...)
+  if GetResourceState(resource) ~= "running" then return nil, "not_running", false end
+  local promise, reason = Open77.exports.call(resource, name, ...)
   if not promise then return nil, tostring(reason or "not_dispatched"), false end
   local result, callError = promise:await()
   if callError then return nil, tostring(callError), false end
@@ -86,7 +90,7 @@ end
 --- Re-read the character. Coroutine only.
 ---@return boolean, string|nil
 local function pull()
-  local result, reason, answered = core("GetPlayerData")
+  local result, reason, answered = Runtime.call(CORE, "GetPlayerData")
   if result == nil then
     -- Answered and refused: no character. The gate closes now rather than in a
     -- minute, because we have been told rather than left guessing.
@@ -125,7 +129,12 @@ end)
 --- of a cabin it has nothing to say about.
 local function scan()
   local at = nowMs()
-  for _, lift in ipairs(Open77.elevators.nearby(Config.SCAN_RADIUS)) do
+  -- Type-checked rather than trusted: this thread has no pcall around it, so a host call
+  -- answering something other than a list would end scanning for the whole session.
+  local nearby = Open77.elevators.nearby(Config.SCAN_RADIUS)
+  if type(nearby) ~= "table" then return end
+  for index = 1, #nearby do
+    local lift = nearby[index]
     local position = lift.position or {}
     local key = Access.locate(position.x, position.y, position.z, lift.engineEntity)
     if key ~= nil then

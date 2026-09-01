@@ -20,6 +20,14 @@ local Config = OPX_ELEVATORS_CONFIG
 --- whichever `pairs` reached first.
 local RANK = { off_duty = 3, grade_too_low = 2, job_required = 1 }
 
+--- key -> its declared ENTITY, lower-cased once. `locate` runs for every lift a client sees
+--- on every scan, and lower-casing each declared hash there allocated one string per
+--- elevator per scan for a value config.lua fixes at load.
+local ENTITY_HASHES = {}
+for key, elevator in pairs(Config.ELEVATORS) do
+  if type(elevator.ENTITY) == "string" then ENTITY_HASHES[key] = elevator.ENTITY:lower() end
+end
+
 ---@param value any
 ---@return number|nil
 local function finite(value)
@@ -67,7 +75,10 @@ end
 function Access.floor(key, index)
   local elevator = Access.elevator(key)
   if elevator == nil or finite(index) == nil then return nil end
-  for _, floor in ipairs(elevator.FLOORS or {}) do
+  local floors = elevator.FLOORS
+  if type(floors) ~= "table" then return nil end
+  for position = 1, #floors do
+    local floor = floors[position]
     if floor.INDEX == index then return floor end
   end
   return nil
@@ -86,11 +97,12 @@ function Access.locate(x, y, z, entity)
   local radius = Config.MATCH_RADIUS * Config.MATCH_RADIUS
   local bestKey, bestElevator, bestDistance
   for key, elevator in pairs(Config.ELEVATORS) do
-    local declared = type(elevator.ENTITY) == "string" and elevator.ENTITY:lower() or nil
+    local declared = ENTITY_HASHES[key]
     local dx, dy, dz = x - elevator.X, y - elevator.Y, z - elevator.Z
-    local distance = dx * dx + dy * dy + dz * dz
-    if declared ~= nil and hash ~= nil and declared == hash and
-      dx * dx + dy * dy <= radius then
+    -- the flat distance is the entity branch's test and half the full one: computed once
+    local flat = dx * dx + dy * dy
+    local distance = flat + dz * dz
+    if declared ~= nil and hash ~= nil and declared == hash and flat <= radius then
       return key, elevator
     end
     if declared == nil and distance <= radius and
@@ -166,9 +178,12 @@ end
 function Access.list(key, snapshot, nowMs)
   local elevator = Access.elevator(key)
   if elevator == nil then return {} end
+  local floors = elevator.FLOORS
+  if type(floors) ~= "table" then return {} end
   local hide = Config.DENIED_FLOORS == "hidden"
   local rows = {}
-  for _, floor in ipairs(elevator.FLOORS or {}) do
+  for position = 1, #floors do
+    local floor = floors[position]
     local ok, failure = Access.evaluate(floor, snapshot, nowMs)
     if ok or not hide then
       rows[#rows + 1] = {
@@ -203,7 +218,8 @@ function Access.problems()
       end
 
       local seen = {}
-      for position, floor in ipairs(floors) do
+      for position = 1, #floors do
+        local floor = floors[position]
         local where = ("%s floor #%d"):format(key, position)
         local index = floor.INDEX
         if finite(index) == nil or index < 0 or index % 1 ~= 0 then

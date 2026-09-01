@@ -43,20 +43,13 @@ local function available()
   return true
 end
 
---- One call to opx77_menu. Coroutine only, and both failure levels kept apart
---- for the same reason they are in client/main.lua -- except that here neither
---- one is worth more than a log line: a menu that did not open is a panel the
---- player will press the button for again.
+--- One call to opx77_menu. `Runtime.call` keeps both failure levels apart for the reason
+--- client/main.lua explains -- except that here neither one is worth more than a log line:
+--- a menu that did not open is a panel the player will press the button for again.
 ---@param name string
 ---@return table|nil, string|nil
 local function menu(name, ...)
-  local promise, reason = Open77.exports.call(MENU, name, ...)
-  if not promise then return nil, tostring(reason or "not_dispatched") end
-  local result, callError = promise:await()
-  if callError then return nil, tostring(callError) end
-  if type(result) ~= "table" then return nil, "malformed_answer" end
-  if result.ok == false then return nil, tostring(result.error or "refused") end
-  return result, nil
+  return Runtime.call(MENU, name, ...)
 end
 
 --- Open the floor list for one elevator.
@@ -79,9 +72,11 @@ function Panel.open(key)
     return { ok = false, error = "no_floors_available", elevator = listing.elevator }
   end
 
+  local rows = listing.floors
   local items = {}
-  for _, row in ipairs(listing.floors) do
-    items[#items + 1] = {
+  for index = 1, #rows do
+    local row = rows[index]
+    items[index] = {
       id = "floor_" .. tostring(row.index),
       label = row.label,
       -- The refusal is shown as the row's VALUE rather than hidden in a
