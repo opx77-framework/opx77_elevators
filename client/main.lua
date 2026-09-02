@@ -49,10 +49,10 @@ local running = false
 
 ---@return integer
 local function nowMs()
-  -- SECONDS. Every shipped client resource treats `monotonic` as seconds, and
-  -- the platform's own API reference says milliseconds; the shipped code wins,
-  -- because it runs. Mixing the two gives a timer that fires a thousand times
-  -- too early, which is the kind of bug only production finds.
+  -- SECONDS, and the platform agrees on both counts: the API reference says
+  -- "Monotonic clock, in seconds", and the host's own Lua bootstrap defines
+  -- `monotonic` as the millisecond scheduler clock divided by 1000. Mixing the
+  -- two gives a timer that fires a thousand times too early.
   return math.floor(Open77.time.monotonic() * 1000)
 end
 
@@ -101,7 +101,7 @@ local function pull()
   return true
 end
 
-AddEventHandler("opx77:client:playerLoaded", function(playerData)
+AddEventHandler("opx77:client:onPlayerLoaded", function(playerData)
   State.adopt(playerData, nowMs())
 end)
 
@@ -112,7 +112,7 @@ AddEventHandler("opx77:client:playerDataChanged", function(playerData)
   State.adopt(playerData, nowMs())
 end)
 
-AddEventHandler("opx77:client:playerUnloaded", function()
+AddEventHandler("opx77:client:onPlayerUnloaded", function()
   State.forget()
 end)
 
@@ -147,7 +147,7 @@ local function scan()
       local due = sighted[key] == nil or at - sighted[key] >= SIGHT_RETRY_MS
       if ready and not lift.managed and State.bound[key] == nil and due then
         sighted[key] = at
-        local accepted, reason = TriggerServerEvent("opx77_elevators:sighted", key,
+        local accepted, reason = TriggerServerEvent("opx77_elevators:sighted",
           lift.engineEntity, position.x, position.y, position.z,
           lift.floorCount, lift.activeFloor)
         if not accepted then

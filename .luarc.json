@@ -9,6 +9,7 @@
   "workspace.checkThirdParty": false,
   "diagnostics.globals": [
     "OpxElevators",
+    "OPX_ELEVATORS_CONFIG",
     "Open77",
     "CreateThread",
     "Wait",

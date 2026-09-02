@@ -28,6 +28,11 @@ local sightWindows, requestWindows, logWindows = {}, {}, {}
 --- saying it twelve times a second does not make it more true.
 local warnedCount = {}
 
+--- True once the "that is not an engine hash" rejection has been said. Same reasoning as
+--- above, one step further: a client that sends the wrong first argument sends it for every
+--- lift it ever sees, so the condition is constant and one line describes it completely.
+local warnedEntity = false
+
 --- Sightings per second, per player: a client streaming through a lobby can legitimately see
 --- several lifts at once, and no client needs more.
 local SIGHTS_PER_SECOND = 12
@@ -41,21 +46,46 @@ local function nowMs()
   return math.floor(Open77.time.monotonic() * 1000)
 end
 
+--- The same predicate as `finite` elsewhere in this framework, coercing first and answering
+--- with the number: anything `tonumber` accepts, so long as it is neither NaN nor either
+--- infinity. It carries no range of its own -- a caller that needs one applies it to the
+--- answer -- so that "finite" means exactly one thing everywhere and a bound stays visible
+--- where it bites.
 ---@param value any
 ---@return number|nil
-local function finite(value)
+local function finiteNumber(value)
   value = tonumber(value)
-  if value == nil or value ~= value or value == math.huge or value == -math.huge or
-    math.abs(value) > 1000000 then
+  -- `value ~= value` is the NaN check, not a typo: NaN is the one value unequal to itself
+  if value == nil or value ~= value or value == math.huge or value == -math.huge then
     return nil
   end
   return value
 end
 
+--- The world box every coordinate this resource accepts has to fit inside, and the ceiling on
+--- any whole number it will later hand to `%d`.
+local BOUND = 1000000
+
+--- A world coordinate: finite, and inside the box above.
+---
+--- The bound used to sit inside the finiteness helper itself, in this file and in
+--- shared/access.lua both, which made a function called `finite` mean "finite and small" --
+--- two different questions under one name. It cost the shared copy a real failure (see the
+--- note on `coordinate` there), so the range now lives beside the values it describes.
+---@param value any
+---@return number|nil
+local function coordinate(value)
+  local parsed = finiteNumber(value)
+  if parsed == nil or parsed > BOUND or parsed < -BOUND then return nil end
+  return parsed
+end
+
+--- A whole number inside the same box. The bound is not decoration here: `%d` RAISES on a
+--- float with no integer representation, and both files format these.
 ---@param value any
 ---@return integer|nil
 local function integer(value)
-  local parsed = finite(value)
+  local parsed = coordinate(value)
   if parsed == nil or parsed % 1 ~= 0 then return nil end
   return math.floor(parsed)
 end
@@ -115,7 +145,7 @@ end
 ---@return boolean
 local function atElevator(elevator, lift)
   local position = lift.position or lift
-  local x, y = finite(position.x), finite(position.y)
+  local x, y = coordinate(position.x), coordinate(position.y)
   if x == nil or y == nil then return false end
   local dx, dy = x - elevator.X, y - elevator.Y
   return dx * dx + dy * dy <= Config.MATCH_RADIUS * Config.MATCH_RADIUS
@@ -186,9 +216,18 @@ RegisterNetEvent("opx77_elevators:sighted", function(entity, x, y, z, floorCount
 
   if type(entity) ~= "string" or
     entity:match("^0[xX]%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x$") == nil then
+    -- Said, because the alternative is what happened last time: the client grew a leading
+    -- argument, every sighting died here, no lift was ever adopted, and the only symptom was
+    -- a panel answering `not_adopted` forever. One log line is the difference between that
+    -- and an audit.
+    if not warnedEntity then
+      warnedEntity = true
+      Open77.log.warn(("sighting rejected: first argument is not an engine hash (%s); the " ..
+        "client and this handler disagree about the wire format"):format(safe(entity)))
+    end
     return
   end
-  x, y, z = finite(x), finite(y), finite(z)
+  x, y, z = coordinate(x), coordinate(y), coordinate(z)
   floorCount, activeFloor = integer(floorCount), integer(activeFloor)
   if x == nil or y == nil or z == nil or floorCount == nil or activeFloor == nil then return end
   if floorCount < 1 or floorCount > 1025 or activeFloor < 0 or activeFloor >= floorCount then
@@ -227,7 +266,7 @@ RegisterNetEvent("opx77_elevators:sighted", function(entity, x, y, z, floorCount
   if existing ~= nil then
     told[key] = told[key] or {}
     told[key][player] = true
-    TriggerClientEvent("opx77_elevators:bound", player, key, existing.id)
+    TriggerClientEvent("opx77_elevators:bound", player, key, existing.id, existing.floorCount)
     return
   end
 
@@ -240,32 +279,18 @@ RegisterNetEvent("opx77_elevators:sighted", function(entity, x, y, z, floorCount
   told[key][player] = true
   Open77.log.info(("%s adopted as elevator %s in bucket %s"):format(key, tostring(result.id),
     tostring(bucket)))
-  TriggerClientEvent("opx77_elevators:bound", player, key, result.id)
+  -- The floor count travels too. `client/main.lua`'s handler has always taken it and this
+  -- send has never carried it, so the client's record held a nil where the ceiling should be.
+  -- It is read from the record rather than from the wire because `Server.adopt` is what
+  -- settled it, between the config's declaration and the host's own count.
+  local record = owned[key]
+  TriggerClientEvent("opx77_elevators:bound", player, key, result.id,
+    record and record.floorCount or floorCount)
 end)
 
 -- ---------------------------------------------------------------------------
 -- Requests
 -- ---------------------------------------------------------------------------
-
---- Where a player is standing, if that is at a configured elevator they may reach.
----@param player integer
----@return string|nil key, table|nil elevator, string|nil error
-local function standingAt(player)
-  local position = Open77.players.position(player)
-  if position == nil then return nil, nil, "no_position" end
-  local best, bestElevator, bestDistance
-  for key, elevator in pairs(Config.ELEVATORS) do
-    if (integer(elevator.BUCKET) or 0) == position.bucket then
-      local distance = Access.distanceSquared(elevator, position.x, position.y, position.z)
-      if distance <= Config.USE_RADIUS * Config.USE_RADIUS and
-        (bestDistance == nil or distance < bestDistance) then
-        best, bestElevator, bestDistance = key, elevator, distance
-      end
-    end
-  end
-  if best == nil then return nil, nil, "no_elevator_nearby" end
-  return best, bestElevator, nil
-end
 
 --- Everything the server can prove about one floor request -- including the job, which is
 --- the whole reason this file is here.
@@ -330,30 +355,6 @@ RegisterNetEvent("opx77_elevators:request", function(key, index)
     Open77.log.info(("player %d refused %s floor %s: %s"):format(player, safe(key), safe(index),
       tostring(result.error)))
   end
-end)
-
---- The floor list for wherever the player is standing.
----
---- The client sends no key and holds no config: it asks where it is, and is told what it may
---- see. A row it is not allowed is either greyed with the operator's wording or absent.
-RegisterNetEvent("opx77_elevators:floors", function()
-  local player = tonumber(source) or 0
-  if player <= 0 then return end
-  if not within(requestWindows, player, Config.REQUESTS_PER_WINDOW,
-    Config.REQUEST_WINDOW_MS) then
-    return
-  end
-
-  local key, elevator, failure = standingAt(player)
-  if key == nil then
-    TriggerClientEvent("opx77_elevators:list", player, false, failure)
-    return
-  end
-  TriggerClientEvent("opx77_elevators:list", player, true, nil, {
-    elevator = key,
-    label = elevator.LABEL,
-    adopted = owned[key] ~= nil,
-  })
 end)
 
 -- ---------------------------------------------------------------------------
@@ -423,7 +424,6 @@ CreateThread(function()
 end)
 
 AddEventHandler("onPlayerDisconnected", Server.forget)
-AddEventHandler("playerDropped", Server.forget)
 
 -- ---------------------------------------------------------------------------
 -- Diagnostics
@@ -475,5 +475,20 @@ else
     -- does nothing, and an operator standing in a lift cannot tell which mistake it was
     Open77.log.warn("config: " .. problems[index])
   end
+
+  --- Warns once if the official package this one replaces is also running. `GetResourceState`
+  --- is the only way to ask: server resources cannot call each other. Deferred to a thread
+  --- rather than run at file scope, because at load time a conflicting resource listed after
+  --- this one in `resources.load` is still `discovered` and the warning would silently not
+  --- fire -- which would make it depend on load order, the one thing an operator did not
+  --- choose. The host answers lowercase; `:lower()` costs nothing and survives it changing.
+  CreateThread(function()
+    local official = tostring(GetResourceState("open77_elevators") or ""):lower()
+    if official ~= "running" and official ~= "starting" then return end
+    Open77.log.warn("open77_elevators is running; a lift adopted by one is refused to the other")
+    Open77.log.warn("  (the platform rejects a different owner), so whichever starts first owns")
+    Open77.log.warn("  the cabin. Drop one from resources.load in server.jsonc.")
+  end)
+
   Open77.log.info("ready")
 end
