@@ -18,10 +18,22 @@ local SIGHT_RETRY_MS = 5000
 local sighted = {}
 local running = false
 
+--- The last good reading: a clock that will not answer must not send time backwards.
+local lastMs = 0
+
+--- Milliseconds since start. `Open77.time.monotonic` answers SECONDS.
 ---@return integer
 local function nowMs()
-  -- `monotonic` answers SECONDS
-  return math.floor(Open77.time.monotonic() * 1000)
+  local clock = Open77.time
+  if type(clock) ~= "table" or type(clock.monotonic) ~= "function" then return lastMs end
+  local read, seconds = pcall(clock.monotonic)
+  -- `seconds ~= seconds` is the NaN check; the bounds beside it reject both infinities
+  if not read or type(seconds) ~= "number" or seconds ~= seconds or
+    seconds < 0 or seconds >= math.huge then
+    return lastMs
+  end
+  lastMs = math.floor(seconds * 1000)
+  return lastMs
 end
 
 --- Tell anything that is listening what just happened.
@@ -35,15 +47,20 @@ end
 -- ---------------------------------------------------------------------------
 
 --- One call to another resource's client export; coroutine only.
---- The third return says whether the target answered: an answered refusal is authoritative,
---- a call that never landed says nothing.
+--- The third return says whether the target answered at all: a refusal is authoritative.
 ---@param resource string
 ---@param name string
 ---@return table|nil, string|nil, boolean
 function Runtime.call(resource, name, ...)
-  if GetResourceState(resource) ~= "running" then return nil, "not_running", false end
-  local promise, reason = Open77.exports.call(resource, name, ...)
-  if not promise then return nil, tostring(reason or "not_dispatched"), false end
+  local reachable, state = pcall(GetResourceState, resource)
+  if not reachable or state ~= "running" then return nil, "not_running", false end
+  if type(Open77.exports) ~= "table" then return nil, "not_dispatched", false end
+  -- the wrapping stops here: `await` below yields, and a yield is not safe under a pcall
+  local dispatched, promise, reason = pcall(Open77.exports.call, resource, name, ...)
+  if not dispatched then return nil, tostring(promise), false end
+  if type(promise) ~= "table" or type(promise.await) ~= "function" then
+    return nil, tostring(reason or "not_dispatched"), false
+  end
   local result, callError = promise:await()
   if callError then return nil, tostring(callError), false end
   if type(result) ~= "table" then return nil, "malformed_answer", true end
@@ -80,19 +97,35 @@ end)
 -- Finding the lifts
 -- ---------------------------------------------------------------------------
 
+--- The player's own position on the X/Y plane, or nil: the host answers three numbers, and
+--- answers nothing at all before the world is up.
+---@return number|nil x, number|nil y
+local function playerXY()
+  local character = Open77.character
+  if type(character) ~= "table" or type(character.position) ~= "function" then
+    return nil, nil
+  end
+  local read, x, y = pcall(character.position)
+  -- `x ~= x` is the NaN check: NaN is unequal to itself, and passes every bound below it
+  if not read or type(x) ~= "number" or type(y) ~= "number" or x ~= x or y ~= y then
+    return nil, nil
+  end
+  return x, y
+end
+
 --- One scan: report the configured lifts in range that the server has not adopted yet.
 --- Only lifts matching a configured position are reported.
 local function scan()
   local at = nowMs()
-  -- type-checked: this thread has no pcall, so a bad answer would end scanning for good
   local nearby = Open77.elevators.nearby(Config.SCAN_RADIUS)
   if type(nearby) ~= "table" then return end
+  local playerX, playerY = playerXY()
   for index = 1, #nearby do
     local lift = nearby[index]
     local position = lift.position or {}
     local key = Access.locate(position.x, position.y, position.z, lift.engineEntity)
     if key ~= nil then
-      State.sighted(key, lift, at)
+      State.sighted(key, lift, at, playerX, playerY)
       -- topology arrives asynchronously; a lift whose inspect has not answered waits a scan
       local ready = lift.floorCount ~= nil and lift.floorCount > 0 and
         lift.activeFloor ~= nil and lift.activeFloor >= 0
@@ -253,12 +286,19 @@ AddEventHandler("onClientResourceStart", function(name)
     -- the core may still be starting, so the loop simply keeps asking
     local nextPullAtMs = 0
     while running do
-      local at = nowMs()
-      if at >= nextPullAtMs then
-        nextPullAtMs = at + Config.POLL_MS
-        pull()
+      -- pcall: a raise from a host call here would end scanning for the whole session
+      local ticked, failure = pcall(function()
+        local at = nowMs()
+        if at >= nextPullAtMs then
+          nextPullAtMs = at + Config.POLL_MS
+          -- on a thread of its own: `pull` yields, so it cannot live under this pcall
+          CreateThread(pull)
+        end
+        scan()
+      end)
+      if not ticked then
+        Open77.log.warn("the elevator scan failed: " .. tostring(failure))
       end
-      scan()
       Wait(Config.SCAN_MS)
     end
   end)

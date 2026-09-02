@@ -1,5 +1,5 @@
---- Player-facing text. Log lines and console output stay in English whatever the locale is.
---- Publishes the global `locale(key, params)` as well as `OpxElevators.locale`.
+--- Player-facing text. Log lines and console output stay in English whatever the
+--- configured locale is. Publishes the global `locale(key, params)` and `OpxElevators.Locale`.
 
 OpxElevators = OpxElevators or {}
 
@@ -9,7 +9,7 @@ local FALLBACK = "en"
 
 local Locale = {}
 
---- Substitutes `{name}` from `params`; a name with no value is left as it was written.
+--- Fills `{name}` from `params`; a placeholder with no value is left as it was written.
 ---@param text string
 ---@param params? table<string, string|number>
 ---@return string
@@ -67,9 +67,9 @@ function Locale.t(key, params)
   return interpolate(text, params)
 end
 
-OpxElevators.locale = Locale
+OpxElevators.Locale = Locale
 
---- The shorthand every gameplay file uses.
+--- The shorthand every file below the catalogues uses.
 ---@type fun(key: string, params?: table<string, string|number>): string
 locale = Locale.t
 

@@ -1,11 +1,12 @@
 resource "opx77_elevators"
-version "0.2.0"
+version "0.3.0"
 open77_version ">=0.0.1"
 auto_start true
 
 reload_policy "local" -- no CEF surface; the server re-adopts from the next client sighting
 
 shared_script "config.lua"
+shared_script "shared/text.lua"
 shared_script "shared/locale.lua"
 shared_script "locales/en.lua" -- registered right after the catalogue, so no file
 shared_script "locales/fr.lua" -- below calls locale() against an empty one
@@ -16,7 +17,7 @@ server_script "server/main.lua"
 client_script "client/state.lua"
 client_script "client/main.lua"
 client_script "client/panel.lua"
-client_script "client/exports.lua"
+client_script "client/exports.lua" -- last: publishing the surface claims it exists
 
 permissions {
   "network.events",

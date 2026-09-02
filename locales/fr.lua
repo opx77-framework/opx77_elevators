@@ -1,4 +1,4 @@
-OpxElevators.locale.register("fr", {
+OpxElevators.Locale.register("fr", {
   ["elevators.locked"]            = "Verrouillé",
   ["elevators.refused"]           = "Cet étage n'est pas accessible.",
 

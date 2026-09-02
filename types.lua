@@ -21,10 +21,10 @@
 ---| "off_duty"             it holds one, at grade, and is not clocked in
 ---| "menu_not_running"     opx77_menu is not running
 ---| "no_floors_available"  everything is gated and DENIED_FLOORS is "hidden"
----| "rate_limited"         too many requests in REQUEST_WINDOW_MS   (server)
+---| "rate_limited"         too many requests in REQUEST_WINDOW_MS    (server)
 ---| "no_position"          no fresh replicated position snapshot     (server)
 ---| "wrong_bucket"         the player is in another routing bucket   (server)
----| "too_far"              further than USE_RADIUS from the shaft    (server)
+---| "too_far"              further than USE_RADIUS across the ground (server)
 ---| "floor_out_of_range"   past the native device's floor count      (server)
 ---| "move_rejected"        `goTo` refused                            (server)
 ---| "adopt_refused"        `adopt` answered nil                      (server)
@@ -34,9 +34,9 @@
 --- One entry of config.lua's ELEVATORS.
 ---@class ElevatorSpec
 ---@field LABEL string
----@field X number
+---@field X number             with Y, where the shaft is: the pair that decides reach
 ---@field Y number
----@field Z number
+---@field Z number             recorded for the diagnostic line; it never decides reach
 ---@field BUCKET integer|nil   routing bucket, default 0
 ---@field ENTITY string|nil    native LiftDevice hash, "0x…16 hex". OPAQUE
 ---@field FLOOR_COUNT integer  the engine's floor count, not #FLOORS
@@ -105,7 +105,7 @@
 ---@field engineEntity string      opaque 64-bit hash as "0x…"
 ---@field controllerEntity string
 ---@field position { x: number, y: number, z: number }
----@field distance number
+---@field distance number          3D, to the cabin, which moves; ranked on X/Y here
 ---@field floorCount integer|nil   nil until the native device's inspect answers
 ---@field activeFloor integer|nil  nil until the native device's inspect answers
 ---@field managed boolean          already adopted by some resource

@@ -49,11 +49,17 @@ local function integer(value)
   return math.floor(parsed)
 end
 
+--- Horizontal distance, squared, or nil when the elevator's X or Y is not a coordinate.
+--- Z never enters it: an elevator is callable from every floor of its own shaft.
 ---@param elevator table
----@return number
-function Access.distanceSquared(elevator, x, y, z)
-  local dx, dy, dz = x - elevator.X, y - elevator.Y, z - elevator.Z
-  return dx * dx + dy * dy + dz * dz
+---@param x number
+---@param y number
+---@return number|nil
+function Access.flatDistanceSquared(elevator, x, y)
+  local ex, ey = coordinate(elevator.X), coordinate(elevator.Y)
+  if ex == nil or ey == nil then return nil end
+  local dx, dy = x - ex, y - ey
+  return dx * dx + dy * dy
 end
 
 -- ---------------------------------------------------------------------------
@@ -86,30 +92,27 @@ function Access.floor(key, index)
   return nil
 end
 
---- Which configured elevator a native lift at (x, y, z) is.
---- A declared ENTITY pins which one; X and Y must still agree, Z is free (the cabin moves).
+--- Which configured elevator a native lift at (x, y, z) is, matched across the ground.
+--- A declared ENTITY pins which one; X and Y must still agree, and Z never decides.
 ---@param entity string|nil
 ---@return string|nil key, table|nil elevator
 function Access.locate(x, y, z, entity)
-  if coordinate(x) == nil or coordinate(y) == nil or coordinate(z) == nil then
-    return nil, nil
-  end
+  -- z is validated and then ignored: a report with a broken axis is a broken report
+  x, y = coordinate(x), coordinate(y)
+  if x == nil or y == nil or coordinate(z) == nil then return nil, nil end
   local hash = type(entity) == "string" and entity:lower() or nil
   local radius = Config.MATCH_RADIUS * Config.MATCH_RADIUS
   local bestKey, bestElevator, bestDistance
   for key, elevator in pairs(Config.ELEVATORS) do
     local declared = ENTITY_HASHES[key]
-    local dx, dy, dz = x - elevator.X, y - elevator.Y, z - elevator.Z
-    -- the flat distance is the entity branch's test and half the full one: computed once
-    local flat = dx * dx + dy * dy
-    local distance = flat + dz * dz
-    if declared ~= nil and hash ~= nil and declared == hash and flat <= radius then
-      return key, elevator
-    end
-    -- the key breaks a tie: `pairs` order must not decide between two shafts in one lobby
-    if declared == nil and distance <= radius and (bestDistance == nil or
-      distance < bestDistance or (distance == bestDistance and key < bestKey)) then
-      bestKey, bestElevator, bestDistance = key, elevator, distance
+    local flat = Access.flatDistanceSquared(elevator, x, y)
+    if flat ~= nil and flat <= radius then
+      if declared ~= nil and hash ~= nil and declared == hash then return key, elevator end
+      -- the key breaks a tie: `pairs` order must not decide between two shafts in one lobby
+      if declared == nil and (bestDistance == nil or flat < bestDistance or
+        (flat == bestDistance and key < bestKey)) then
+        bestKey, bestElevator, bestDistance = key, elevator, flat
+      end
     end
   end
   return bestKey, bestElevator
@@ -126,7 +129,7 @@ end
 local function heldGrade(snapshot, name)
   local job = snapshot.job
   if type(job) == "table" and job.name == name then
-    return type(job.grade) == "table" and job.grade.level or 0
+    return type(job.grade) == "table" and finiteNumber(job.grade.level) or 0
   end
   if Config.MEMBERSHIP ~= "any" then return nil end
   if type(snapshot.jobs) ~= "table" then return nil end
@@ -145,10 +148,9 @@ function Access.evaluate(floor, snapshot, nowMs)
   if type(required) ~= "table" or next(required) == nil then return true, nil end
 
   -- `finiteNumber`, never `coordinate`: a millisecond clock outgrows BOUND mid-session
-  if type(snapshot) ~= "table" or finiteNumber(snapshot.atMs) == nil then
-    return false, "no_character"
-  end
-  if nowMs - snapshot.atMs > Config.JOB_MAX_AGE_MS then return false, "job_stale" end
+  local atMs = type(snapshot) == "table" and finiteNumber(snapshot.atMs) or nil
+  if atMs == nil then return false, "no_character" end
+  if nowMs - atMs > Config.JOB_MAX_AGE_MS then return false, "job_stale" end
   if type(snapshot.job) ~= "table" then return false, "no_character" end
 
   local worst, worstRank = "job_required", RANK.job_required
@@ -205,6 +207,14 @@ end
 function Access.problems()
   local lines = {}
   for key, elevator in pairs(Config.ELEVATORS) do
+    -- the axes come first: every distance and every `%.2f` below them raises on a string
+    for _, axis in ipairs({ "X", "Y", "Z" }) do
+      if coordinate(elevator[axis]) == nil then
+        lines[#lines + 1] = ("%s: %s must be a finite number inside %d"):format(key, axis,
+          BOUND)
+      end
+    end
+
     local floors = elevator.FLOORS
     if type(floors) ~= "table" or #floors == 0 then
       lines[#lines + 1] = key .. ": no FLOORS, so its panel would be empty"

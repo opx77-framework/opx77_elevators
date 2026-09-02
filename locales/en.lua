@@ -1,4 +1,4 @@
-OpxElevators.locale.register("en", {
+OpxElevators.Locale.register("en", {
   ["elevators.locked"]            = "Locked",
   ["elevators.refused"]           = "That floor is not available.",
 

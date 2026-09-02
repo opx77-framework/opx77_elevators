@@ -16,7 +16,8 @@ State.snapshot = nil
 --- key -> { id, floorCount, atMs }. Filled by the server's `bound` event.
 State.bound = {}
 
---- key -> what one scan saw of a lift. `distance`, `id`, `managed` and `atMs` are read.
+--- key -> what one scan saw of a lift. `reach`, `distance`, `id`, `managed` and `atMs`
+--- are read.
 State.seen = {}
 
 --- Adopt a PlayerData snapshot from opx77_core; only the job travels.
@@ -36,13 +37,24 @@ function State.forget()
   State.snapshot = nil
 end
 
---- Record what one scan saw. `lift` is a `Open77.elevators.nearby` entry.
+--- Record what one scan saw. `lift` is a `Open77.elevators.nearby` entry; `playerX` and
+--- `playerY` are the player's own, or nil when the host would not answer them.
 ---@param key string
 ---@param lift table
 ---@param nowMs integer
-function State.sighted(key, lift, nowMs)
+---@param playerX number|nil
+---@param playerY number|nil
+function State.sighted(key, lift, nowMs, playerX, playerY)
   local position = lift.position or {}
+  local elevator = Access.elevator(key)
+  local flat = nil
+  if elevator ~= nil and type(playerX) == "number" and type(playerY) == "number" then
+    flat = Access.flatDistanceSquared(elevator, playerX, playerY)
+  end
   State.seen[key] = {
+    -- across the ground, to the DECLARED position, which is what the server measures too
+    reach = flat ~= nil and math.sqrt(flat) or nil,
+    -- the host's own 3D distance to the cabin, and the fallback when `reach` is unknown
     distance = lift.distance,
     entity = lift.engineEntity,
     -- the SERVER's id, present only once the lift is managed
@@ -57,16 +69,20 @@ function State.sighted(key, lift, nowMs)
 end
 
 --- The elevator the player is standing at, or nil: the nearest within USE_RADIUS.
+--- Ranked across the ground, so every floor of a shaft is in reach of its own panel.
 ---@param nowMs integer
 ---@return string|nil key
 function State.nearest(nowMs)
   local staleMs = Config.SCAN_MS * 2
   local bestKey, bestDistance
   for key, lift in pairs(State.seen) do
-    if nowMs - lift.atMs <= staleMs and type(lift.distance) == "number" and
-      lift.distance <= Config.USE_RADIUS and
-      (bestDistance == nil or lift.distance < bestDistance) then
-      bestKey, bestDistance = key, lift.distance
+    -- the host's 3D distance is the fallback, and is never the smaller of the two
+    local reach = lift.reach or lift.distance
+    -- the key breaks a tie: `pairs` order must not decide between two shafts in one lobby
+    if nowMs - lift.atMs <= staleMs and type(reach) == "number" and
+      reach <= Config.USE_RADIUS and (bestDistance == nil or reach < bestDistance or
+      (reach == bestDistance and key < bestKey)) then
+      bestKey, bestDistance = key, reach
     end
   end
   return bestKey

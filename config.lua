@@ -8,14 +8,16 @@ OPX_ELEVATORS_CONFIG = {
   POLL_MS = 15000, -- how often to re-read the character from opx77_core
   SCAN_MS = 2000, -- how often the client looks for native lifts
   EVENT = "opx77:elevators", -- raised on the client after every decision
-  MATCH_RADIUS = 6.0, -- how close a native lift must be to a declared position to be it, in metres
-  USE_RADIUS = 4.0, -- how close the player must be to use the panel, in metres
+  MATCH_RADIUS = 6.0, -- how close, across the ground, a lift must be to a declared position
+  USE_RADIUS = 4.0, -- how close, across the ground, the player must be to use the panel
   SCAN_RADIUS = 40.0, -- how far a client's sighting report is believed, in metres
   TRAVEL_MS = 8000, -- how long the cabin takes to travel
   REQUEST_WINDOW_MS = 10000, -- the rate limit window, per player
   REQUESTS_PER_WINDOW = 6, -- floor requests one player may make in that window
   COMMAND = "opx77.elevators.where", -- ACL-gated diagnostic command, or false for none
 
+  -- X and Y place the shaft and are the only pair a distance is measured on; Z is recorded
+  -- and never compared, so an elevator is callable from every floor of its own shaft.
   ELEVATORS = { -- placeholder positions; probe real ones with open77:elevators:nearby
     arasaka_tower = {
       LABEL = "ARASAKA TOWER",

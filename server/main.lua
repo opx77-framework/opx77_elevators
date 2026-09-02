@@ -2,6 +2,7 @@
 
 local Config = OPX_ELEVATORS_CONFIG
 local Access = OpxElevators.access
+local Text = OpxElevators.Text
 
 local Server = {}
 OpxElevators.server = Server
@@ -24,9 +25,22 @@ local warnedEntity = false
 --- Sightings per second, per player.
 local SIGHTS_PER_SECOND = 12
 
+--- The last good reading: a clock that will not answer must not send time backwards.
+local lastMs = 0
+
+--- Milliseconds since start. `Open77.time.monotonic` answers SECONDS.
 ---@return integer
 local function nowMs()
-  return math.floor(Open77.time.monotonic() * 1000)
+  local clock = Open77.time
+  if type(clock) ~= "table" or type(clock.monotonic) ~= "function" then return lastMs end
+  local read, seconds = pcall(clock.monotonic)
+  -- `seconds ~= seconds` is the NaN check; the bounds beside it reject both infinities
+  if not read or type(seconds) ~= "number" or seconds ~= seconds or
+    seconds < 0 or seconds >= math.huge then
+    return lastMs
+  end
+  lastMs = math.floor(seconds * 1000)
+  return lastMs
 end
 
 --- Coerce to a number, rejecting NaN and both infinities. Carries no range of its own.
@@ -68,13 +82,15 @@ local function sameEntity(left, right)
   return tostring(left or ""):lower() == tostring(right or ""):lower()
 end
 
---- Truncate and strip control characters before a value off the wire reaches a log line.
+--- The longest a value off the wire may be once it reaches a log line, in characters.
+local MAX_LOGGED = 64
+
+--- Strip control characters and cap the length before a wire value reaches a format string,
+--- where a newline would forge a whole log line.
 ---@param value any
 ---@return string
 local function safe(value)
-  local text = tostring(value or ""):gsub("[%c]", " ")
-  if #text > 64 then text = text:sub(1, 64) .. "..." end
-  return text
+  return Text.clean(value, MAX_LOGGED, "...") or ""
 end
 
 ---@return boolean
@@ -193,7 +209,9 @@ RegisterNetEvent("opx77_elevators:sighted", function(entity, x, y, z, floorCount
 
   local position = Open77.players.position(player)
   if position == nil then return end
-  local dx, dy, dz = x - position.x, y - position.y, z - position.z
+  local px, py, pz = coordinate(position.x), coordinate(position.y), coordinate(position.z)
+  if px == nil or py == nil or pz == nil then return end
+  local dx, dy, dz = x - px, y - py, z - pz
   if dx * dx + dy * dy + dz * dz > Config.SCAN_RADIUS * Config.SCAN_RADIUS then return end
 
   local key, elevator = Access.locate(x, y, z, entity)
@@ -282,14 +300,20 @@ function Server.request(player, key, index)
     release(key)
     return { ok = false, error = "not_adopted" }
   end
-  if index >= lift.floorCount then return { ok = false, error = "floor_out_of_range" } end
+  local floorCount = integer(lift.floorCount)
+  if floorCount == nil or index >= floorCount then
+    return { ok = false, error = "floor_out_of_range" }
+  end
 
   local position = Open77.players.position(player)
   if position == nil then return { ok = false, error = "no_position" } end
   if position.bucket ~= lift.bucket then return { ok = false, error = "wrong_bucket" } end
-  -- measured against the DECLARED position, not the cabin's: the cabin may be up the shaft
-  if Access.distanceSquared(elevator, position.x, position.y, position.z) >
-    Config.USE_RADIUS * Config.USE_RADIUS then
+  local px, py = coordinate(position.x), coordinate(position.y)
+  if px == nil or py == nil then return { ok = false, error = "no_position" } end
+  -- across the ground, and against the DECLARED position: the cabin may be up the shaft,
+  -- and an elevator is callable from every floor of its own
+  local reach = Access.flatDistanceSquared(elevator, px, py)
+  if reach == nil or reach > Config.USE_RADIUS * Config.USE_RADIUS then
     return { ok = false, error = "too_far" }
   end
 
@@ -332,9 +356,10 @@ AddEventHandler("onElevatorRemoved", function(id, _, reason)
 end)
 
 --- Forget a departing player's rate-limit windows and audience membership.
----@param playerId any
+--- `onPlayerDisconnected` is the only departure event this platform raises.
+---@param playerId integer
 function Server.forget(playerId)
-  local player = tonumber(playerId) or tonumber(source) or 0
+  local player = tonumber(playerId) or 0
   if player <= 0 then return end
   sightWindows[player] = nil
   requestWindows[player] = nil
@@ -349,14 +374,18 @@ local UNUSED_MS = 600000
 CreateThread(function()
   while true do
     Wait(60000)
-    local at = nowMs()
-    for key, record in pairs(owned) do
-      if record.usedAtMs == nil and at - (record.atMs or at) > UNUSED_MS then
-        release(key)
-        Open77.log.warn(("%s released: adopted %d minutes ago and never used")
-          :format(key, math.floor(UNUSED_MS / 60000)))
+    -- pcall: a raise from a host call here would end the sweep for the life of the process
+    local swept, failure = pcall(function()
+      local at = nowMs()
+      for key, record in pairs(owned) do
+        if record.usedAtMs == nil and at - (record.atMs or at) > UNUSED_MS then
+          release(key)
+          Open77.log.warn(("%s released: adopted %d minutes ago and never used")
+            :format(key, math.floor(UNUSED_MS / 60000)))
+        end
       end
-    end
+    end)
+    if not swept then Open77.log.error("the adoption sweep failed: " .. tostring(failure)) end
   end
 end)
 
@@ -379,8 +408,10 @@ if type(Config.COMMAND) == "string" and Config.COMMAND ~= "" then
         local record = owned[key]
         local lift = record and Open77.elevators.get(record.id) or nil
         report[#report + 1] = ("%s %s pos=%.2f,%.2f,%.2f floors=%d/%d id=%s %s"):format(
-          key, tostring(elevator.LABEL), elevator.X, elevator.Y, elevator.Z,
-          #(elevator.FLOORS or {}), integer(elevator.FLOOR_COUNT) or 0,
+          key, tostring(elevator.LABEL), coordinate(elevator.X) or 0.0,
+          coordinate(elevator.Y) or 0.0, coordinate(elevator.Z) or 0.0,
+          type(elevator.FLOORS) == "table" and #elevator.FLOORS or 0,
+          integer(elevator.FLOOR_COUNT) or 0,
           record and tostring(record.id) or "-",
           lift and ("phase=%s floor=%s flags=%s"):format(tostring(lift.phase),
             tostring(lift.activeFloor), tostring(lift.flags)) or "not adopted")
@@ -411,11 +442,11 @@ else
     Open77.log.warn("config: " .. problems[index])
   end
 
-  --- Warn once if the official package this one replaces is also running.
-  --- Deferred to a thread: at load time a resource listed after this one is still
-  --- `discovered`.
+  --- Warn once if the official package this one replaces is also running. Deferred to a
+  --- thread: at load time a resource listed after this one is still `discovered`.
   CreateThread(function()
-    local official = tostring(GetResourceState("open77_elevators") or ""):lower()
+    local read, state = pcall(GetResourceState, "open77_elevators")
+    local official = read and tostring(state or ""):lower() or ""
     if official ~= "running" and official ~= "starting" then return end
     Open77.log.warn("open77_elevators is running; a lift adopted by one is refused to the other")
     Open77.log.warn("  (the platform rejects a different owner), so whichever starts first owns")
