@@ -33,7 +33,7 @@ end
 
 --- The floor list at an elevator, each row with whether the player may take it and why not.
 ---@param elevator string|nil  defaults to the nearest
----@return table
+---@return FloorListing
 exports("floors", function(elevator)
   return nobody() or Runtime.floors(elevator)
 end)
@@ -41,7 +41,7 @@ end)
 --- Would this floor be allowed? Sends nothing and moves nothing.
 ---@param elevator string|nil
 ---@param floor integer
----@return table
+---@return FloorDecision
 exports("check", function(elevator, floor)
   return nobody() or Runtime.check(elevator, floor)
 end)
@@ -50,7 +50,7 @@ end)
 --- `OPX_ELEVATORS_CONFIG.EVENT`.
 ---@param elevator string|nil
 ---@param floor integer
----@return table
+---@return FloorDecision
 exports("use", function(elevator, floor)
   local owner = caller()
   if owner == nil then return response(false, { error = "export_call_required" }) end
@@ -59,13 +59,13 @@ end)
 
 --- Open the floor list through opx77_menu.
 ---@param elevator string|nil
----@return table
+---@return FloorDecision
 exports("panel", function(elevator)
   return nobody() or Panel.open(elevator)
 end)
 
 --- Which configured elevator the player is standing at, or `ok = false`.
----@return table
+---@return ElevatorResponse
 exports("nearest", function()
   local gone = nobody()
   if gone then return gone end
@@ -76,7 +76,7 @@ end)
 
 --- What this client knows: the job, how old the reading is, whether the gate still trusts
 --- it, and how many lifts are in range and bound.
----@return table
+---@return ElevatorClientState
 exports("state", function()
   local gone = nobody()
   if gone then return gone end

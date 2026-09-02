@@ -25,21 +25,16 @@ local warnedEntity = false
 --- Sightings per second, per player.
 local SIGHTS_PER_SECOND = 12
 
---- The last good reading: a clock that will not answer must not send time backwards.
-local lastMs = 0
-
---- Milliseconds since start. `Open77.time.monotonic` answers SECONDS.
+--- The scheduler clock in milliseconds; `monotonic` answers SECONDS. A non-finite reading is
+--- dropped rather than propagated: a NaN would expire nothing, an infinity everything.
 ---@return integer
+local lastMs = 0
 local function nowMs()
-  local clock = Open77.time
-  if type(clock) ~= "table" or type(clock.monotonic) ~= "function" then return lastMs end
-  local read, seconds = pcall(clock.monotonic)
-  -- `seconds ~= seconds` is the NaN check; the bounds beside it reject both infinities
-  if not read or type(seconds) ~= "number" or seconds ~= seconds or
-    seconds < 0 or seconds >= math.huge then
-    return lastMs
+  local read, seconds = pcall(Open77.time.monotonic)
+  if read and type(seconds) == "number" and seconds == seconds and
+    seconds >= 0 and seconds < math.huge then
+    lastMs = math.floor(seconds * 1000)
   end
-  lastMs = math.floor(seconds * 1000)
   return lastMs
 end
 
