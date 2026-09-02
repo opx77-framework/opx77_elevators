@@ -1,30 +1,4 @@
---- opx77_elevators -- the client half: the link to opx77_core, and the panel's
---- decisions.
---- WHY THE JOB CHECK IS HERE, AND WHAT IT IS WORTH
---- The job lives in opx77_core. The server runtime installs no `exports` and no
---- cross-resource event bus, so this resource's SERVER half cannot ask the core anything --
---- not the job, not the grade, not whether a character is loaded. The CLIENT runtime can, and
---- does, right here.
----
---- That makes the check a HINT, and the platform's conventions say so: "re-derive client
---- conditions on the server: they are hints". A modified client skips everything in this
---- file. Every adopted elevator is locked, so the host refuses a request sent straight off a
---- client and our server half is the only way the cabin moves -- and it checks everything a
---- server CAN: our elevator, a floor this config lists, the player standing there, the right
---- bucket, the rate. Not the job. So a modified client reaches the configured floors of an
---- elevator it is standing at, and not the whole shaft.
---- Neither is a security boundary for the JOB. Do not build anything on this
---- gate that money or a body count depends on -- README, "What the job check is
---- worth", says what to do instead.
---- HOW A SATELLITE REACHES THE CORE
---- `Open77.exports.call` is asynchronous, always: it answers a promise, and
---- `await` only works inside a `CreateThread`. Failure has TWO levels --
---- `nil, reason` when the call cannot be dispatched, then `result, callError`
---- when it was dispatched and failed. They mean opposite things. A call the
---- core ANSWERED and refused is authoritative: there is no character, and the
---- job goes. A call that never landed says nothing -- the core is restarting --
---- so the snapshot is left alone to AGE OUT under JOB_MAX_AGE_MS instead of
---- being thrown away on our own problem, and instead of being trusted forever.
+--- The client half: the link to opx77_core, the job gate, and the floor requests.
 
 OpxElevators = OpxElevators or {}
 
@@ -39,21 +13,22 @@ local RESOURCE = GetCurrentResourceName()
 local CORE = "opx77_core"
 
 --- Milliseconds between two reports of the same unadopted lift.
---- The server ignores a lift it has already adopted, but a client that has just
---- streamed in sends before it has been told, and five seconds is what the
---- shipped reference resource waits for the same reason.
 local SIGHT_RETRY_MS = 5000
 
 local sighted = {}
 local running = false
 
+--- The scheduler clock in milliseconds; `monotonic` answers SECONDS. A non-finite reading is
+--- dropped rather than propagated: a NaN would expire nothing, an infinity everything.
 ---@return integer
+local lastMs = 0
 local function nowMs()
-  -- SECONDS, and the platform agrees on both counts: the API reference says
-  -- "Monotonic clock, in seconds", and the host's own Lua bootstrap defines
-  -- `monotonic` as the millisecond scheduler clock divided by 1000. Mixing the
-  -- two gives a timer that fires a thousand times too early.
-  return math.floor(Open77.time.monotonic() * 1000)
+  local read, seconds = pcall(Open77.time.monotonic)
+  if read and type(seconds) == "number" and seconds == seconds and
+    seconds >= 0 and seconds < math.huge then
+    lastMs = math.floor(seconds * 1000)
+  end
+  return lastMs
 end
 
 --- Tell anything that is listening what just happened.
@@ -66,20 +41,21 @@ end
 -- The core
 -- ---------------------------------------------------------------------------
 
---- One call to another resource's client export, with both failure levels kept apart.
---- The third return is the one that matters: ANSWERED means the target ran the export and
---- refused, which is authoritative. Not answered means the call never got there.
----
---- Published on Runtime because client/panel.lua asks opx77_menu in exactly this shape, and
---- two copies of a two-level failure contract is two places for one of them to drift.
---- Coroutine only: `await` has no synchronous form.
+--- One call to another resource's client export; coroutine only.
+--- The third return says whether the target answered at all: a refusal is authoritative.
 ---@param resource string
 ---@param name string
 ---@return table|nil, string|nil, boolean
 function Runtime.call(resource, name, ...)
-  if GetResourceState(resource) ~= "running" then return nil, "not_running", false end
-  local promise, reason = Open77.exports.call(resource, name, ...)
-  if not promise then return nil, tostring(reason or "not_dispatched"), false end
+  local reachable, state = pcall(GetResourceState, resource)
+  if not reachable or state ~= "running" then return nil, "not_running", false end
+  if type(Open77.exports) ~= "table" then return nil, "not_dispatched", false end
+  -- the wrapping stops here: `await` below yields, and a yield is not safe under a pcall
+  local dispatched, promise, reason = pcall(Open77.exports.call, resource, name, ...)
+  if not dispatched then return nil, tostring(promise), false end
+  if type(promise) ~= "table" or type(promise.await) ~= "function" then
+    return nil, tostring(reason or "not_dispatched"), false
+  end
   local result, callError = promise:await()
   if callError then return nil, tostring(callError), false end
   if type(result) ~= "table" then return nil, "malformed_answer", true end
@@ -92,8 +68,7 @@ end
 local function pull()
   local result, reason, answered = Runtime.call(CORE, "GetPlayerData")
   if result == nil then
-    -- Answered and refused: no character. The gate closes now rather than in a
-    -- minute, because we have been told rather than left guessing.
+    -- answered and refused: no character, so the gate closes now rather than ageing out
     if answered then State.forget() end
     return false, reason
   end
@@ -106,9 +81,6 @@ AddEventHandler("opx77:client:onPlayerLoaded", function(playerData)
 end)
 
 AddEventHandler("opx77:client:playerDataChanged", function(playerData)
-  -- Every change, including the one that matters: a promotion, a demotion, a
-  -- job swapped at a terminal. The gate reads the snapshot on every press, so
-  -- there is nothing to invalidate -- the next press is already using this.
   State.adopt(playerData, nowMs())
 end)
 
@@ -120,28 +92,36 @@ end)
 -- Finding the lifts
 -- ---------------------------------------------------------------------------
 
---- One scan: what is streamed, which of it is ours, and what the server has not
---- adopted yet.
---- Only lifts that match a CONFIGURED position are reported. The shipped
---- reference resource adopts every native lift it sees, which is the right
---- behaviour for a reference and the wrong one here: this resource is a door
---- policy, and adopting a lift nobody wrote a policy for would take ownership
---- of a cabin it has nothing to say about.
+--- The player's own position on the X/Y plane, or nil: the host answers three numbers, and
+--- answers nothing at all before the world is up.
+---@return number|nil x, number|nil y
+local function playerXY()
+  local character = Open77.character
+  if type(character) ~= "table" or type(character.position) ~= "function" then
+    return nil, nil
+  end
+  local read, x, y = pcall(character.position)
+  -- `x ~= x` is the NaN check: NaN is unequal to itself, and passes every bound below it
+  if not read or type(x) ~= "number" or type(y) ~= "number" or x ~= x or y ~= y then
+    return nil, nil
+  end
+  return x, y
+end
+
+--- One scan: report the configured lifts in range that the server has not adopted yet.
+--- Only lifts matching a configured position are reported.
 local function scan()
   local at = nowMs()
-  -- Type-checked rather than trusted: this thread has no pcall around it, so a host call
-  -- answering something other than a list would end scanning for the whole session.
   local nearby = Open77.elevators.nearby(Config.SCAN_RADIUS)
   if type(nearby) ~= "table" then return end
+  local playerX, playerY = playerXY()
   for index = 1, #nearby do
     local lift = nearby[index]
     local position = lift.position or {}
     local key = Access.locate(position.x, position.y, position.z, lift.engineEntity)
     if key ~= nil then
-      State.sighted(key, lift, at)
-      -- Topology arrives asynchronously from the native LiftDevice. Never
-      -- invent a floor count: a lift whose inspect has not answered yet is
-      -- reported on the next scan instead.
+      State.sighted(key, lift, at, playerX, playerY)
+      -- topology arrives asynchronously; a lift whose inspect has not answered waits a scan
       local ready = lift.floorCount ~= nil and lift.floorCount > 0 and
         lift.activeFloor ~= nil and lift.activeFloor >= 0
       local due = sighted[key] == nil or at - sighted[key] >= SIGHT_RETRY_MS
@@ -159,8 +139,7 @@ local function scan()
 end
 
 --- The server has adopted one, and this is the id it got.
---- Ids are assigned at adoption and change on every restart, which is why the
---- durable name of an elevator is its config KEY and never its id.
+--- Ids change on every restart, which is why an elevator's durable name is its config key.
 RegisterNetEvent("opx77_elevators:bound", function(key, id, floorCount)
   if type(key) ~= "string" or Access.elevator(key) == nil then return end
   State.bound[key] = { id = id, floorCount = floorCount, atMs = nowMs() }
@@ -182,9 +161,8 @@ RegisterNetEvent("opx77_elevators:answer", function(key, index, ok, failure)
   end
 end)
 
---- An elevator this resource owns has gone -- the server released it, or the
---- host removed it. The binding goes with it, so the next scan re-reports the
---- lift rather than sending requests for an id nobody owns.
+--- An elevator this resource owns has gone; the binding goes with it so the next scan
+--- re-reports the lift.
 RegisterNetEvent("opx77_elevators:released", function(key)
   if type(key) ~= "string" then return end
   State.bound[key] = nil
@@ -196,9 +174,7 @@ end)
 -- ---------------------------------------------------------------------------
 
 --- The Open77 id of a configured elevator, or nil.
---- The binding from our own server half is preferred over what a scan saw:
---- both come from the host, but the binding says "we own this one", and
---- `nearby` would happily report a lift some other resource adopted.
+--- Our server half's binding wins over a scan: `nearby` also reports lifts others adopted.
 ---@param key string
 ---@return integer|nil
 function Runtime.elevatorId(key)
@@ -225,11 +201,7 @@ function Runtime.floors(key)
   return { ok = true, elevator = key, floors = State.rows(key, nowMs()) }
 end
 
---- Select a floor.
---- Answers what is known NOW, which is "asked": the
---- server has still to agree, and its answer arrives as `opx77_elevators:answer`
---- and on Config.EVENT. `ok = true` never means the cabin moved -- an export
---- handler is not a coroutine, so there is nothing here that could wait for it.
+--- Select a floor. `ok = true` means asked: the server's verdict arrives on Config.EVENT.
 ---@param key string|nil
 ---@param index integer
 ---@param origin string|nil  "panel" | "export", for the published event
@@ -245,7 +217,7 @@ function Runtime.use(key, index, origin)
 
   local id = Runtime.elevatorId(key)
   if id == nil then
-    -- Sighted but not adopted yet, or adopted by nobody. Nothing to press.
+    -- sighted but not adopted yet, or adopted by nobody
     result = { ok = false, error = "not_adopted", elevator = key, floor = index,
                 source = result.source }
     publish(result)
@@ -263,9 +235,7 @@ function Runtime.use(key, index, origin)
   return result
 end
 
---- Would this player be allowed on this floor? Decides nothing and sends
---- nothing -- it is the same call `use` makes, exposed so a caller can grey a
---- row of its own UI the way the panel does.
+--- Would this player be allowed on this floor? Decides nothing and sends nothing.
 ---@param key string|nil
 ---@param index integer
 ---@return table
@@ -300,9 +270,7 @@ end
 AddEventHandler("onClientResourceStart", function(name)
   if name ~= RESOURCE then return end
 
-  -- The native table is absent on a client that has not loaded the world yet,
-  -- and on one whose game build predates the elevator API. Saying so once beats
-  -- a stack trace per scan.
+  -- absent on a client with no world loaded, or a game build predating the elevator API
   if type(Open77.elevators) ~= "table" then
     Open77.log.error("native elevator API unavailable; nothing will be scanned")
     return
@@ -310,17 +278,22 @@ AddEventHandler("onClientResourceStart", function(name)
 
   running = true
   CreateThread(function()
-    -- The core may still be starting. "Not running yet" is not an error, so the
-    -- loop simply keeps asking: manifest order ACROSS resources is not ours to
-    -- decide.
+    -- the core may still be starting, so the loop simply keeps asking
     local nextPullAtMs = 0
     while running do
-      local at = nowMs()
-      if at >= nextPullAtMs then
-        nextPullAtMs = at + Config.POLL_MS
-        pull()
+      -- pcall: a raise from a host call here would end scanning for the whole session
+      local ticked, failure = pcall(function()
+        local at = nowMs()
+        if at >= nextPullAtMs then
+          nextPullAtMs = at + Config.POLL_MS
+          -- on a thread of its own: `pull` yields, so it cannot live under this pcall
+          CreateThread(pull)
+        end
+        scan()
+      end)
+      if not ticked then
+        Open77.log.warn("the elevator scan failed: " .. tostring(failure))
       end
-      scan()
       Wait(Config.SCAN_MS)
     end
   end)

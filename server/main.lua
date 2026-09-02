@@ -1,16 +1,8 @@
---- opx77_elevators -- the server half: ownership, and everything a server can prove.
----
---- It cannot learn a player's job. The job lives in opx77_core and the server runtime
---- installs no cross-resource event bus, so there is no message to send and no promise to
---- await. What a client says about a job is a claim; this file does not pretend otherwise.
----
---- It checks, from its own authority, every other clause: the elevator is one THIS resource
---- adopted, the floor is one config.lua declares and is inside the native device's count, the
---- player is standing at the cabin per a replicated snapshot, in the elevator's routing
---- bucket, and not spamming.
+--- The server half: adoption, and everything a server can prove about a floor request.
 
 local Config = OPX_ELEVATORS_CONFIG
 local Access = OpxElevators.access
+local Text = OpxElevators.Text
 
 local Server = {}
 OpxElevators.server = Server
@@ -24,33 +16,29 @@ local told = {}
 
 local sightWindows, requestWindows, logWindows = {}, {}, {}
 
---- key -> true once the floor-count mismatch has been said. It is a config mistake, and
---- saying it twelve times a second does not make it more true.
+--- key -> true once the floor-count mismatch has been logged.
 local warnedCount = {}
 
---- True once the "that is not an engine hash" rejection has been said. Same reasoning as
---- above, one step further: a client that sends the wrong first argument sends it for every
---- lift it ever sees, so the condition is constant and one line describes it completely.
+--- True once the "not an engine hash" rejection has been logged.
 local warnedEntity = false
 
---- Sightings per second, per player: a client streaming through a lobby can legitimately see
---- several lifts at once, and no client needs more.
+--- Sightings per second, per player.
 local SIGHTS_PER_SECOND = 12
 
---- Failure ranking, so a floor listing three jobs reports the closest near-miss rather than
---- whichever `pairs` reached first.
-local RANK = { off_duty = 3, grade_too_low = 2, job_required = 1 }
-
+--- The scheduler clock in milliseconds; `monotonic` answers SECONDS. A non-finite reading is
+--- dropped rather than propagated: a NaN would expire nothing, an infinity everything.
 ---@return integer
+local lastMs = 0
 local function nowMs()
-  return math.floor(Open77.time.monotonic() * 1000)
+  local read, seconds = pcall(Open77.time.monotonic)
+  if read and type(seconds) == "number" and seconds == seconds and
+    seconds >= 0 and seconds < math.huge then
+    lastMs = math.floor(seconds * 1000)
+  end
+  return lastMs
 end
 
---- The same predicate as `finite` elsewhere in this framework, coercing first and answering
---- with the number: anything `tonumber` accepts, so long as it is neither NaN nor either
---- infinity. It carries no range of its own -- a caller that needs one applies it to the
---- answer -- so that "finite" means exactly one thing everywhere and a bound stays visible
---- where it bites.
+--- Coerce to a number, rejecting NaN and both infinities. Carries no range of its own.
 ---@param value any
 ---@return number|nil
 local function finiteNumber(value)
@@ -62,16 +50,10 @@ local function finiteNumber(value)
   return value
 end
 
---- The world box every coordinate this resource accepts has to fit inside, and the ceiling on
---- any whole number it will later hand to `%d`.
+--- The box every accepted coordinate must fit inside, and the ceiling on any `%d` argument.
 local BOUND = 1000000
 
---- A world coordinate: finite, and inside the box above.
----
---- The bound used to sit inside the finiteness helper itself, in this file and in
---- shared/access.lua both, which made a function called `finite` mean "finite and small" --
---- two different questions under one name. It cost the shared copy a real failure (see the
---- note on `coordinate` there), so the range now lives beside the values it describes.
+--- A world coordinate: finite, and inside BOUND.
 ---@param value any
 ---@return number|nil
 local function coordinate(value)
@@ -80,8 +62,7 @@ local function coordinate(value)
   return parsed
 end
 
---- A whole number inside the same box. The bound is not decoration here: `%d` RAISES on a
---- float with no integer representation, and both files format these.
+--- A whole number inside BOUND; `%d` raises on a float with no integer representation.
 ---@param value any
 ---@return integer|nil
 local function integer(value)
@@ -90,21 +71,21 @@ local function integer(value)
   return math.floor(parsed)
 end
 
---- Engine identifiers are opaque: compared as lower-cased strings, never through `tonumber`,
---- which a 64-bit hash does not survive.
+--- Engine identifiers are opaque: compared as lower-cased strings, never through `tonumber`.
 ---@return boolean
 local function sameEntity(left, right)
   return tostring(left or ""):lower() == tostring(right or ""):lower()
 end
 
---- Truncate and strip control characters: a key comes off the wire and reaches a format
---- string, where a newline forges a whole log line.
+--- The longest a value off the wire may be once it reaches a log line, in characters.
+local MAX_LOGGED = 64
+
+--- Strip control characters and cap the length before a wire value reaches a format string,
+--- where a newline would forge a whole log line.
 ---@param value any
 ---@return string
 local function safe(value)
-  local text = tostring(value or ""):gsub("[%c]", " ")
-  if #text > 64 then text = text:sub(1, 64) .. "..." end
-  return text
+  return Text.clean(value, MAX_LOGGED, "...") or ""
 end
 
 ---@return boolean
@@ -125,11 +106,8 @@ end
 -- Adoption
 -- ---------------------------------------------------------------------------
 
---- Lock or unlock player requests on one lift.
----
---- `flags.locked` is the host's own switch for "refuse requests coming from a client", which
---- is what makes this file the only way the cabin moves. `powered` is left exactly as the
---- host set it: an operator who cut the power did it on purpose.
+--- Lock player requests on one lift, so this file is the only thing that moves the cabin.
+--- `powered` is left exactly as the host set it.
 ---@param id integer
 ---@return boolean
 local function applyLock(id)
@@ -140,8 +118,7 @@ local function applyLock(id)
   return Open77.elevators.setFlags(id, flags) == true
 end
 
---- Whether a lift the host reported stands at a configured elevator. Horizontal only: a shaft
---- does not move on the floor plan and the cabin does not stay on it.
+--- Whether a lift the host reported stands at a configured elevator. Horizontal only.
 ---@return boolean
 local function atElevator(elevator, lift)
   local position = lift.position or lift
@@ -155,15 +132,13 @@ end
 ---@return table
 function Server.adopt(key, entity, x, y, z, bucket, floorCount, activeFloor)
   local configured = Access.elevator(key)
-  -- Type-checked rather than trusted: `all()` is a host call, and this runs off a net event
-  -- where a raise is swallowed with no adoption and no answer.
+  -- type-checked: `all()` is a host call, and a raise off a net event is swallowed silently
   local adopted = Open77.elevators.all(bucket)
   local adoptedCount = type(adopted) == "table" and #adopted or 0
   for index = 1, adoptedCount do
     local existing = adopted[index]
     if sameEntity(existing.engineEntity, entity) then
-      -- The hash came off the wire and `all()` lists every adopted lift in the bucket. Naming
-      -- another elevator's hash from here would point this key at that other cabin.
+      -- the hash came off the wire: another elevator's would point this key at that cabin
       if configured == nil or not atElevator(configured, existing) then
         return { ok = false, error = "wrong_place" }
       end
@@ -183,8 +158,7 @@ function Server.adopt(key, entity, x, y, z, bucket, floorCount, activeFloor)
     end
   end
 
-  -- wrapped because the shipped reference resource wraps it, which is the only evidence
-  -- available about whether it can throw
+  -- wrapped: whether `adopt` can throw is not documented
   local ok, id, reason = pcall(Open77.elevators.adopt, {
     engineEntity = entity,
     position = { x = x, y = y, z = z },
@@ -198,17 +172,14 @@ function Server.adopt(key, entity, x, y, z, bucket, floorCount, activeFloor)
   owned[key] = { id = id, entity = entity, bucket = bucket, floorCount = floorCount,
                  atMs = nowMs() }
   if not applyLock(id) then
-    -- worth a line rather than a rollback: an unlocked lift still answers this file, it just
-    -- also answers a client directly, and running that way unnoticed is the real failure
+    -- a line rather than a rollback: an unlocked lift also answers a client directly
     Open77.log.warn(("%s adopted as %s but could not be locked"):format(key, tostring(id)))
   end
   return { ok = true, id = id }
 end
 
 --- A client says it is looking at an unmanaged lift.
----
---- Discovery only proposes immutable topology. The server picks the elevator, the bucket and
---- the floor count itself; the client's report is a set of coordinates and a hash.
+--- The server picks the elevator, the bucket and the floor count itself.
 RegisterNetEvent("opx77_elevators:sighted", function(entity, x, y, z, floorCount, activeFloor)
   local player = tonumber(source) or 0
   if player <= 0 then return end
@@ -216,10 +187,7 @@ RegisterNetEvent("opx77_elevators:sighted", function(entity, x, y, z, floorCount
 
   if type(entity) ~= "string" or
     entity:match("^0[xX]%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x$") == nil then
-    -- Said, because the alternative is what happened last time: the client grew a leading
-    -- argument, every sighting died here, no lift was ever adopted, and the only symptom was
-    -- a panel answering `not_adopted` forever. One log line is the difference between that
-    -- and an audit.
+    -- said once: a wire-format disagreement otherwise shows up only as `not_adopted` forever
     if not warnedEntity then
       warnedEntity = true
       Open77.log.warn(("sighting rejected: first argument is not an engine hash (%s); the " ..
@@ -236,23 +204,23 @@ RegisterNetEvent("opx77_elevators:sighted", function(entity, x, y, z, floorCount
 
   local position = Open77.players.position(player)
   if position == nil then return end
-  local dx, dy, dz = x - position.x, y - position.y, z - position.z
+  local px, py, pz = coordinate(position.x), coordinate(position.y), coordinate(position.z)
+  if px == nil or py == nil or pz == nil then return end
+  local dx, dy, dz = x - px, y - py, z - pz
   if dx * dx + dy * dy + dz * dz > Config.SCAN_RADIUS * Config.SCAN_RADIUS then return end
 
   local key, elevator = Access.locate(x, y, z, entity)
   if key == nil then return end
 
-  -- The bucket is the ELEVATOR's, never the reporter's: adopting into a player's bucket lets
-  -- the first person to walk past a lift fix it to theirs, and one doing it from a private
-  -- instance leaves everyone else answered `wrong_bucket` for the life of the process.
+  -- the bucket is the ELEVATOR's, never the reporter's: otherwise the first passer-by fixes
+  -- the lift to their own bucket for the life of the process
   local bucket = integer(elevator.BUCKET) or 0
   if position.bucket ~= bucket then return end
 
-  -- Same for the floor count: it becomes the ceiling every index is checked against.
+  -- same for the floor count: it becomes the ceiling every index is checked against
   local declared = integer(elevator.FLOOR_COUNT)
   if declared ~= nil and declared >= 1 then
-    -- once per elevator, not once per sighting: a client reports up to twelve a second and
-    -- this is a config mistake, which does not become truer by being said again
+    -- once per elevator, not once per sighting
     if declared ~= floorCount and not warnedCount[key] then
       warnedCount[key] = true
       Open77.log.warn(("%s reported %d floors, config declares %d; using the config"):format(
@@ -272,28 +240,40 @@ RegisterNetEvent("opx77_elevators:sighted", function(entity, x, y, z, floorCount
 
   local result = Server.adopt(key, entity, x, y, z, bucket, floorCount, activeFloor)
   if not result.ok then
-    Open77.log.warn(("%s not adopted: %s (%s)"):format(key, result.error, tostring(result.reason)))
+    -- throttled with the request refusals: a client sights faster than a disk write
+    if within(logWindows, player, 1, 1000) then
+      Open77.log.warn(("%s not adopted: %s (%s)"):format(key, result.error,
+        tostring(result.reason)))
+    end
     return
   end
   told[key] = told[key] or {}
   told[key][player] = true
   Open77.log.info(("%s adopted as elevator %s in bucket %s"):format(key, tostring(result.id),
     tostring(bucket)))
-  -- The floor count travels too. `client/main.lua`'s handler has always taken it and this
-  -- send has never carried it, so the client's record held a nil where the ceiling should be.
-  -- It is read from the record rather than from the wire because `Server.adopt` is what
-  -- settled it, between the config's declaration and the host's own count.
+  -- the count is read from the record: `Server.adopt` settled it between config and host
   local record = owned[key]
   TriggerClientEvent("opx77_elevators:bound", player, key, result.id,
     record and record.floorCount or floorCount)
 end)
 
+--- Drop an adoption and tell everyone who was handed its id. The logging is the caller's.
+---@param key string
+local function release(key)
+  owned[key] = nil
+  local audience = told[key]
+  if audience == nil then return end
+  for player in pairs(audience) do
+    TriggerClientEvent("opx77_elevators:released", player, key)
+  end
+  told[key] = nil
+end
+
 -- ---------------------------------------------------------------------------
 -- Requests
 -- ---------------------------------------------------------------------------
 
---- Everything the server can prove about one floor request -- including the job, which is
---- the whole reason this file is here.
+--- Everything the server can prove about one floor request.
 ---@return table
 function Server.request(player, key, index)
   if not within(requestWindows, player, Config.REQUESTS_PER_WINDOW,
@@ -311,25 +291,28 @@ function Server.request(player, key, index)
   if record == nil then return { ok = false, error = "not_adopted" } end
   local lift = Open77.elevators.get(record.id)
   if lift == nil then
-    -- removed under us; forget it so the next sighting adopts it again
-    owned[key] = nil
+    -- released, not just forgotten: a client keeping the dead id never re-reports the lift
+    release(key)
     return { ok = false, error = "not_adopted" }
   end
-  if index >= lift.floorCount then return { ok = false, error = "floor_out_of_range" } end
+  local floorCount = integer(lift.floorCount)
+  if floorCount == nil or index >= floorCount then
+    return { ok = false, error = "floor_out_of_range" }
+  end
 
   local position = Open77.players.position(player)
   if position == nil then return { ok = false, error = "no_position" } end
   if position.bucket ~= lift.bucket then return { ok = false, error = "wrong_bucket" } end
-  -- measured against the DECLARED position, not the cabin's: a cabin at the top of the shaft
-  -- is thirty metres from the player at the ground-floor panel, who is exactly who may call it
-  if Access.distanceSquared(elevator, position.x, position.y, position.z) >
-    Config.USE_RADIUS * Config.USE_RADIUS then
+  local px, py = coordinate(position.x), coordinate(position.y)
+  if px == nil or py == nil then return { ok = false, error = "no_position" } end
+  -- across the ground, and against the DECLARED position: the cabin may be up the shaft,
+  -- and an elevator is callable from every floor of its own
+  local reach = Access.flatDistanceSquared(elevator, px, py)
+  if reach == nil or reach > Config.USE_RADIUS * Config.USE_RADIUS then
     return { ok = false, error = "too_far" }
   end
 
-  -- No job clause, and there cannot be one: see the header. `floor` is read above only to
-  -- prove the index is one config.lua declares.
-
+  -- no job clause: this VM cannot ask opx77_core for a job (see README)
   local moved = Open77.elevators.goTo(record.id, index, { travelMs = Config.TRAVEL_MS })
   if not moved then return { ok = false, error = "move_rejected" } end
   -- the adoption has served: the sweep below leaves it alone from here on
@@ -341,16 +324,12 @@ RegisterNetEvent("opx77_elevators:request", function(key, index)
   local player = tonumber(source) or 0
   if player <= 0 then return end
   local result = Server.request(player, key, index)
-  -- The rate limit governs the cabin, not this answer: a refused packet still costs one
-  -- outbound event echoing whatever the client sent. Bounded, and dropped entirely once the
-  -- limit is the reason -- a client that is being told to slow down does not need telling
-  -- more often than it is allowed to ask.
+  -- the rate limit governs the cabin, not this answer; dropped only when it is the reason
   if result.error ~= "rate_limited" then
     TriggerClientEvent("opx77_elevators:answer", player, safe(key), integer(index),
       result.ok, result.error)
   end
-  -- one line per player per second: the refusal path is the cheap one for an attacker, and
-  -- it is the path that writes to disk
+  -- one line per player per second: the refusal path is the cheap one for an attacker
   if not result.ok and within(logWindows, player, 1, 1000) then
     Open77.log.info(("player %d refused %s floor %s: %s"):format(player, safe(key), safe(index),
       tostring(result.error)))
@@ -360,21 +339,6 @@ end)
 -- ---------------------------------------------------------------------------
 -- Keeping the index honest
 -- ---------------------------------------------------------------------------
-
---- Drop an adoption and tell everyone who was handed its id. Both callers -- the host
---- removing a lift, and the unused-adoption sweep -- have to do exactly this, and doing it
---- twice by hand is how two copies of one rule drift apart. The logging is the caller's:
---- one of them is routine and the other is a warning.
----@param key string
-local function release(key)
-  owned[key] = nil
-  local audience = told[key]
-  if audience == nil then return end
-  for player in pairs(audience) do
-    TriggerClientEvent("opx77_elevators:released", player, key)
-  end
-  told[key] = nil
-end
 
 AddEventHandler("onElevatorRemoved", function(id, _, reason)
   for key, record in pairs(owned) do
@@ -386,10 +350,11 @@ AddEventHandler("onElevatorRemoved", function(id, _, reason)
   end
 end)
 
---- Both departure events, because the platform raises two and documents neither.
----@param playerId any
+--- Forget a departing player's rate-limit windows and audience membership.
+--- `onPlayerDisconnected` is the only departure event this platform raises.
+---@param playerId integer
 function Server.forget(playerId)
-  local player = tonumber(playerId) or tonumber(source) or 0
+  local player = tonumber(playerId) or 0
   if player <= 0 then return end
   sightWindows[player] = nil
   requestWindows[player] = nil
@@ -397,29 +362,25 @@ function Server.forget(playerId)
   for _, players in pairs(told) do players[player] = nil end
 end
 
---- Release an adoption that has never moved a cabin.
----
---- The hash in a sighting cannot be verified: `Open77.elevators.all()` lists only lifts that
---- are already adopted, so a lift nobody has taken yet is invisible to this VM. One packet
---- with a well-formed hash therefore binds a key to a lift that may not exist, and every
---- later sighting short-circuits on it -- the real cabin can then never be adopted, because
---- the host refuses a second adopt for the same bucket.
----
---- It cannot be prevented here, so it is made to heal: an adoption that has not moved a cabin
---- within UNUSED_MS goes back, and the next honest sighting takes the slot.
+--- An adoption that has not moved a cabin within this is released, so a key bound by a
+--- bogus sighting heals: a sighting's hash cannot be verified before adoption.
 local UNUSED_MS = 600000
 
 CreateThread(function()
   while true do
     Wait(60000)
-    local at = nowMs()
-    for key, record in pairs(owned) do
-      if record.usedAtMs == nil and at - (record.atMs or at) > UNUSED_MS then
-        release(key)
-        Open77.log.warn(("%s released: adopted %d minutes ago and never used")
-          :format(key, math.floor(UNUSED_MS / 60000)))
+    -- pcall: a raise from a host call here would end the sweep for the life of the process
+    local swept, failure = pcall(function()
+      local at = nowMs()
+      for key, record in pairs(owned) do
+        if record.usedAtMs == nil and at - (record.atMs or at) > UNUSED_MS then
+          release(key)
+          Open77.log.warn(("%s released: adopted %d minutes ago and never used")
+            :format(key, math.floor(UNUSED_MS / 60000)))
+        end
       end
-    end
+    end)
+    if not swept then Open77.log.error("the adoption sweep failed: " .. tostring(failure)) end
   end
 end)
 
@@ -442,15 +403,16 @@ if type(Config.COMMAND) == "string" and Config.COMMAND ~= "" then
         local record = owned[key]
         local lift = record and Open77.elevators.get(record.id) or nil
         report[#report + 1] = ("%s %s pos=%.2f,%.2f,%.2f floors=%d/%d id=%s %s"):format(
-          key, tostring(elevator.LABEL), elevator.X, elevator.Y, elevator.Z,
-          #(elevator.FLOORS or {}), integer(elevator.FLOOR_COUNT) or 0,
+          key, tostring(elevator.LABEL), coordinate(elevator.X) or 0.0,
+          coordinate(elevator.Y) or 0.0, coordinate(elevator.Z) or 0.0,
+          type(elevator.FLOORS) == "table" and #elevator.FLOORS or 0,
+          integer(elevator.FLOOR_COUNT) or 0,
           record and tostring(record.id) or "-",
           lift and ("phase=%s floor=%s flags=%s"):format(tostring(lift.phase),
             tostring(lift.activeFloor), tostring(lift.flags)) or "not adopted")
       end
     end
-    -- sorted: `pairs` order would reshuffle the report between two runs, and comparing two
-    -- dumps is the whole use for it
+    -- sorted: `pairs` order would reshuffle the report between two runs
     table.sort(report)
     for index = 1, #report do lines[#lines + 1] = report[index] end
     lines[#lines + 1] = ("denied=%s membership=%s"):format(Config.DENIED_FLOORS,
@@ -471,19 +433,15 @@ if type(Open77.elevators) ~= "table" then
 else
   local problems = Access.problems()
   for index = 1, #problems do
-    -- said at boot as well as on demand: every one produces the same symptom, a button that
-    -- does nothing, and an operator standing in a lift cannot tell which mistake it was
+    -- said at boot as well as on demand: every one produces the same symptom, a dead button
     Open77.log.warn("config: " .. problems[index])
   end
 
-  --- Warns once if the official package this one replaces is also running. `GetResourceState`
-  --- is the only way to ask: server resources cannot call each other. Deferred to a thread
-  --- rather than run at file scope, because at load time a conflicting resource listed after
-  --- this one in `resources.load` is still `discovered` and the warning would silently not
-  --- fire -- which would make it depend on load order, the one thing an operator did not
-  --- choose. The host answers lowercase; `:lower()` costs nothing and survives it changing.
+  --- Warn once if the official package this one replaces is also running. Deferred to a
+  --- thread: at load time a resource listed after this one is still `discovered`.
   CreateThread(function()
-    local official = tostring(GetResourceState("open77_elevators") or ""):lower()
+    local read, state = pcall(GetResourceState, "open77_elevators")
+    local official = read and tostring(state or ""):lower() or ""
     if official ~= "running" and official ~= "starting" then return end
     Open77.log.warn("open77_elevators is running; a lift adopted by one is refused to the other")
     Open77.log.warn("  (the platform rejects a different owner), so whichever starts first owns")

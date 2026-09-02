@@ -1,13 +1,4 @@
---- The gate, and the only file that reads a job.
----
---- Pure: no runtime, no network, no elevator API. Both halves load it, for different halves
---- of the question -- the client asks "may this player press this button", the server asks
---- only "is this a button this file declared", because the server HAS no character to ask
---- about. See README, "Where the job check happens".
----
---- Fails closed in four directions: no character, a job matching nothing, a snapshot older
---- than JOB_MAX_AGE_MS, and no snapshot at all. A PUBLIC floor is unaffected by all four: a
---- lobby that stops working while the core restarts is worse than anything the gate protects.
+--- The gate: reads config.lua and decides which floors a character may select.
 
 OpxElevators = OpxElevators or {}
 
@@ -16,23 +7,16 @@ OpxElevators.access = Access
 
 local Config = OPX_ELEVATORS_CONFIG
 
---- Failure ranking, so a floor listing three jobs reports the closest near-miss rather than
---- whichever `pairs` reached first.
+--- Failure ranking, so the closest near-miss is reported rather than the first `pairs` found.
 local RANK = { off_duty = 3, grade_too_low = 2, job_required = 1 }
 
---- key -> its declared ENTITY, lower-cased once. `locate` runs for every lift a client sees
---- on every scan, and lower-casing each declared hash there allocated one string per
---- elevator per scan for a value config.lua fixes at load.
+--- key -> its declared ENTITY, lower-cased once at load.
 local ENTITY_HASHES = {}
 for key, elevator in pairs(Config.ELEVATORS) do
   if type(elevator.ENTITY) == "string" then ENTITY_HASHES[key] = elevator.ENTITY:lower() end
 end
 
---- The same predicate as `finite` elsewhere in this framework, coercing first and answering
---- with the number: anything `tonumber` accepts, so long as it is neither NaN nor either
---- infinity. It carries no range of its own -- a caller that needs one applies it to the
---- answer -- so that "finite" means exactly one thing everywhere and a bound stays visible
---- where it bites.
+--- Coerce to a number, rejecting NaN and both infinities. Carries no range of its own.
 ---@param value any
 ---@return number|nil
 local function finiteNumber(value)
@@ -44,18 +28,10 @@ local function finiteNumber(value)
   return value
 end
 
---- The world box every coordinate this resource accepts has to fit inside, and the ceiling on
---- any whole number it will later hand to `%d`.
+--- The box every accepted coordinate must fit inside, and the ceiling on any `%d` argument.
 local BOUND = 1000000
 
---- A world coordinate: finite, and inside the box above.
----
---- This bound used to sit inside the finiteness helper itself, which made a function called
---- `finite` mean "finite and small" -- and the two are not the same question. A millisecond
---- clock went through the same helper, so after BOUND milliseconds of uptime -- under
---- seventeen minutes -- `Access.evaluate` stopped recognising a snapshot and every job-gated
---- floor answered `no_character` for the rest of the session. A range belongs beside the
---- values it describes.
+--- A world coordinate: finite, and inside BOUND.
 ---@param value any
 ---@return number|nil
 local function coordinate(value)
@@ -64,8 +40,7 @@ local function coordinate(value)
   return parsed
 end
 
---- A whole number inside the same box. The bound is not decoration here: `%d` RAISES on a
---- float with no integer representation, and both files format these.
+--- A whole number inside BOUND; `%d` raises on a float with no integer representation.
 ---@param value any
 ---@return integer|nil
 local function integer(value)
@@ -74,11 +49,17 @@ local function integer(value)
   return math.floor(parsed)
 end
 
+--- Horizontal distance, squared, or nil when the elevator's X or Y is not a coordinate.
+--- Z never enters it: an elevator is callable from every floor of its own shaft.
 ---@param elevator table
----@return number
-function Access.distanceSquared(elevator, x, y, z)
-  local dx, dy, dz = x - elevator.X, y - elevator.Y, z - elevator.Z
-  return dx * dx + dy * dy + dz * dz
+---@param x number
+---@param y number
+---@return number|nil
+function Access.flatDistanceSquared(elevator, x, y)
+  local ex, ey = coordinate(elevator.X), coordinate(elevator.Y)
+  if ex == nil or ey == nil then return nil end
+  local dx, dy = x - ex, y - ey
+  return dx * dx + dy * dy
 end
 
 -- ---------------------------------------------------------------------------
@@ -94,14 +75,14 @@ function Access.elevator(key)
   return elevator
 end
 
---- One configured floor by its NATIVE index, never its position in FLOORS: the panel's order
---- is a presentation choice and the shaft's is not.
+--- One configured floor by its NATIVE index, never its position in FLOORS.
 ---@param key string
 ---@param index integer
 ---@return table|nil
 function Access.floor(key, index)
   local elevator = Access.elevator(key)
-  if elevator == nil or finiteNumber(index) == nil then return nil end
+  index = finiteNumber(index)
+  if elevator == nil or index == nil then return nil end
   local floors = elevator.FLOORS
   if type(floors) ~= "table" then return nil end
   for position = 1, #floors do
@@ -111,32 +92,27 @@ function Access.floor(key, index)
   return nil
 end
 
---- Which configured elevator a native lift at (x, y, z) is.
----
---- A declared ENTITY pins WHICH elevator among those the coordinates could be; X and Y must
---- still agree. Z is free -- that is what the hash is for, since the cabin is wherever it
---- last stopped and a tower's cabin is nowhere near its shaft's declared Z.
+--- Which configured elevator a native lift at (x, y, z) is, matched across the ground.
+--- A declared ENTITY pins which one; X and Y must still agree, and Z never decides.
 ---@param entity string|nil
 ---@return string|nil key, table|nil elevator
 function Access.locate(x, y, z, entity)
-  if coordinate(x) == nil or coordinate(y) == nil or coordinate(z) == nil then
-    return nil, nil
-  end
+  -- z is validated and then ignored: a report with a broken axis is a broken report
+  x, y = coordinate(x), coordinate(y)
+  if x == nil or y == nil or coordinate(z) == nil then return nil, nil end
   local hash = type(entity) == "string" and entity:lower() or nil
   local radius = Config.MATCH_RADIUS * Config.MATCH_RADIUS
   local bestKey, bestElevator, bestDistance
   for key, elevator in pairs(Config.ELEVATORS) do
     local declared = ENTITY_HASHES[key]
-    local dx, dy, dz = x - elevator.X, y - elevator.Y, z - elevator.Z
-    -- the flat distance is the entity branch's test and half the full one: computed once
-    local flat = dx * dx + dy * dy
-    local distance = flat + dz * dz
-    if declared ~= nil and hash ~= nil and declared == hash and flat <= radius then
-      return key, elevator
-    end
-    if declared == nil and distance <= radius and
-      (bestDistance == nil or distance < bestDistance) then
-      bestKey, bestElevator, bestDistance = key, elevator, distance
+    local flat = Access.flatDistanceSquared(elevator, x, y)
+    if flat ~= nil and flat <= radius then
+      if declared ~= nil and hash ~= nil and declared == hash then return key, elevator end
+      -- the key breaks a tie: `pairs` order must not decide between two shafts in one lobby
+      if declared == nil and (bestDistance == nil or flat < bestDistance or
+        (flat == bestDistance and key < bestKey)) then
+        bestKey, bestElevator, bestDistance = key, elevator, flat
+      end
     end
   end
   return bestKey, bestElevator
@@ -153,7 +129,7 @@ end
 local function heldGrade(snapshot, name)
   local job = snapshot.job
   if type(job) == "table" and job.name == name then
-    return type(job.grade) == "table" and job.grade.level or 0
+    return type(job.grade) == "table" and finiteNumber(job.grade.level) or 0
   end
   if Config.MEMBERSHIP ~= "any" then return nil end
   if type(snapshot.jobs) ~= "table" then return nil end
@@ -161,8 +137,6 @@ local function heldGrade(snapshot, name)
 end
 
 --- May this character select this floor?
----
---- `nowMs` is an argument rather than a read, so this file stays pure and staleness testable.
 ---@param floor table|nil
 ---@param snapshot table|nil  as client/state.lua keeps it, or nil when the core never answered
 ---@param nowMs integer
@@ -173,12 +147,10 @@ function Access.evaluate(floor, snapshot, nowMs)
   -- a public floor stays open with no snapshot: a core outage must not trap a lobby
   if type(required) ~= "table" or next(required) == nil then return true, nil end
 
-  -- `finiteNumber`, never a bounded helper: this is a millisecond clock, and a ceiling on
-  -- it silently expires every snapshot once the session has run long enough.
-  if type(snapshot) ~= "table" or finiteNumber(snapshot.atMs) == nil then
-    return false, "no_character"
-  end
-  if nowMs - snapshot.atMs > Config.JOB_MAX_AGE_MS then return false, "job_stale" end
+  -- `finiteNumber`, never `coordinate`: a millisecond clock outgrows BOUND mid-session
+  local atMs = type(snapshot) == "table" and finiteNumber(snapshot.atMs) or nil
+  if atMs == nil then return false, "no_character" end
+  if nowMs - atMs > Config.JOB_MAX_AGE_MS then return false, "job_stale" end
   if type(snapshot.job) ~= "table" then return false, "no_character" end
 
   local worst, worstRank = "job_required", RANK.job_required
@@ -230,20 +202,26 @@ function Access.list(key, snapshot, nowMs)
 end
 
 --- Everything wrong with ELEVATORS that can be seen without a world.
----
 --- It cannot check a job NAME: those live in opx77_core, which this VM cannot ask.
 ---@return string[]
 function Access.problems()
   local lines = {}
   for key, elevator in pairs(Config.ELEVATORS) do
+    -- the axes come first: every distance and every `%.2f` below them raises on a string
+    for _, axis in ipairs({ "X", "Y", "Z" }) do
+      if coordinate(elevator[axis]) == nil then
+        lines[#lines + 1] = ("%s: %s must be a finite number inside %d"):format(key, axis,
+          BOUND)
+      end
+    end
+
     local floors = elevator.FLOORS
     if type(floors) ~= "table" or #floors == 0 then
       lines[#lines + 1] = key .. ": no FLOORS, so its panel would be empty"
     else
-      -- FLOOR_COUNT gets its own test: `%d` raises on a number with no integer
-      -- representation, and a fractional one whose floors are all in range passed silently
-      local count = elevator.FLOOR_COUNT
-      if count ~= nil and (integer(count) == nil or count < 1) then
+      -- FLOOR_COUNT gets its own test: `%d` raises on a number with no integer form
+      local count = integer(elevator.FLOOR_COUNT)
+      if elevator.FLOOR_COUNT ~= nil and (count == nil or count < 1) then
         lines[#lines + 1] = key .. ": FLOOR_COUNT must be a whole number, 1 or more"
         count = nil
       end
@@ -252,8 +230,8 @@ function Access.problems()
       for position = 1, #floors do
         local floor = floors[position]
         local where = ("%s floor #%d"):format(key, position)
-        local index = floor.INDEX
-        if integer(index) == nil or index < 0 then
+        local index = integer(floor.INDEX)
+        if index == nil or index < 0 then
           lines[#lines + 1] = where .. ": INDEX must be a whole number, 0 or more"
           -- nothing below may use it: `seen[nil]` raises, on the value just diagnosed
           index = nil
@@ -285,4 +263,3 @@ function Access.problems()
   table.sort(lines)
   return lines
 end
-
