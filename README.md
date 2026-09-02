@@ -8,11 +8,9 @@
 > **Do not rely on the current API for production resources yet.**
 
 > [!IMPORTANT]
-> **The job check on these elevators is a client-side hint, and no setting turns it into anything else.**
+> **The job check is a client-side hint: the Open77 server runtime has no cross-resource event bus, so this resource's server half cannot ask `opx77_core` for a job and cannot re-derive the check.**
 >
-> The Open77 server runtime has no cross-resource event bus, so this resource's server half cannot ask `opx77_core` for a player's job. It re-derives everything else — the elevator, the floor, the player's position and routing bucket, the rate — but not the job.
->
-> **Do not gate money, contraband or a body count on it.** Gate the flavour: which floor a lift stops at, which corridor a story happens in. A decision that has to be unforgeable belongs in `opx77_core`'s server VM, where the job is already in memory.
+> It re-derives everything else — the elevator, the floor, the player's position and routing bucket, the rate. Gate flavour on the job, never money or a body count; an unforgeable decision belongs in `opx77_core`'s server VM.
 
 Job-gated in-world elevators for **Opx77**. A floor list on the lifts Night City already has, with each floor opened or closed by the job a character holds in `opx77_core`.
 
@@ -30,8 +28,11 @@ An Arasaka executive floor, the NCPD holding level, a ripperdoc's back room: the
 | Export | Does |
 |---|---|
 | `floors` | every floor at an elevator, each with whether the player may take it and why not |
+| `check` | would this floor be allowed? decides nothing and sends nothing |
 | `use` | select a floor |
 | `panel` | open the floor list through `opx77_menu` |
+| `nearest` | which configured elevator the player is standing at |
+| `state` | what this client knows: the job, how old the reading is, the lifts in range |
 
 `floors` defaults to the elevator the player is standing at and returns its key, so a caller drawing its own panel needs nothing else.
 
@@ -40,6 +41,14 @@ An Arasaka executive floor, the NCPD holding level, a ripperdoc's back room: the
 `config.lua`. Each elevator by a durable key: where the shaft is, how many floors the native device has, and the stops this resource offers with their job requirements.
 
 Every adopted lift is locked with the host's own flag, so the elevator authority refuses a request sent straight off a client and this resource is the only way the cabin moves.
+
+## Language
+
+`LOCALE` in `config.lua` picks the catalogue player-facing text is read from — `"en"` or `"fr"` as shipped. Each resource carries its own catalogue, so this is set here as well as in `opx77_core`.
+
+To add a language, copy `locales/en.lua` to `locales/<code>.lua`, change the code in the `register` call, translate the values, add a `shared_script "locales/<code>.lua"` line to `open77.lua` beside the others, and set `LOCALE` to it. A key missing from a catalogue falls back to English, then to the key itself.
+
+A floor's `REASON` and `LABEL` in `config.lua` are the server owner's own words and are never translated: a refused floor is shown with its `REASON` where there is one, and with this resource's own wording only where there is not. Log lines and the diagnostic command stay English.
 
 ## Community & Support
 

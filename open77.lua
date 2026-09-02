@@ -6,6 +6,9 @@ auto_start true
 reload_policy "local" -- no CEF surface; the server re-adopts from the next client sighting
 
 shared_script "config.lua"
+shared_script "shared/locale.lua"
+shared_script "locales/en.lua" -- registered right after the catalogue, so no file
+shared_script "locales/fr.lua" -- below calls locale() against an empty one
 shared_script "shared/access.lua"
 
 server_script "server/main.lua"

@@ -2,7 +2,7 @@
 --- Type annotations for opx77_elevators. Never loaded at runtime.
 
 ---@alias ElevatorKey string
----| # the durable name of an elevator, the key in opx77_core's config/elevators.lua.
+---| # the durable name of an elevator, the key in this resource's config.lua ELEVATORS.
 ---| # NOT the Open77 id: that is assigned at adoption and changes every restart.
 
 ---@alias FloorIndex integer  the NATIVE floor index, 0-based
@@ -19,7 +19,6 @@
 ---| "job_required"         the character holds none of the floor's jobs
 ---| "grade_too_low"        it holds one, below the minimum grade
 ---| "off_duty"             it holds one, at grade, and is not clocked in
----| "panel_disabled"       PANEL is not "menu"
 ---| "menu_not_running"     opx77_menu is not running
 ---| "no_floors_available"  everything is gated and DENIED_FLOORS is "hidden"
 ---| "rate_limited"         too many requests in REQUEST_WINDOW_MS   (server)
@@ -30,10 +29,9 @@
 ---| "move_rejected"        `goTo` refused                            (server)
 ---| "adopt_refused"        `adopt` answered nil                      (server)
 ---| "adopt_raised"         `adopt` raised                            (server)
----| "request_refused"      `request` refused                         (client)
 ---| "not_sent"             the net event was not accepted            (client)
 
---- One entry of opx77_core's config/elevators.lua ELEVATORS.
+--- One entry of config.lua's ELEVATORS.
 ---@class ElevatorSpec
 ---@field LABEL string
 ---@field X number
@@ -82,7 +80,7 @@
 ---@field elevator ElevatorKey|nil
 ---@field floors FloorRow[]|nil
 
---- What `use` answers. Under ENFORCEMENT = "server", `ok = true` means asked, not moved.
+--- What `use` answers. `ok = true` means asked: the server's verdict arrives on the event.
 ---@class FloorDecision : ElevatorResponse
 ---@field elevator ElevatorKey|nil
 ---@field floor FloorIndex|nil

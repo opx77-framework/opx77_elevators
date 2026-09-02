@@ -1,11 +1,7 @@
--- Read by both halves and shipped to every client: nothing here is secret. Job names must
--- exist in opx77_core/data/jobs.lua.
---
--- The job requirements below are a CLIENT-SIDE hint. This resource's server VM cannot ask
--- opx77_core for a job -- the runtime installs no cross-resource event bus -- so it proves
--- the elevator, the floor, the position, the bucket and the rate, and not the job. See README.
+-- Configuration for opx77_elevators. Job names must exist in opx77_core/data/jobs.lua.
 
 OPX_ELEVATORS_CONFIG = {
+  LOCALE = "en", -- which locales/*.lua catalogue player-facing text is read from
   DENIED_FLOORS = "shown", -- floors the player cannot reach: "shown" greyed, or "hidden"
   MEMBERSHIP = "primary", -- "primary" reads the job being worked, "any" the whole membership map
   JOB_MAX_AGE_MS = 60000, -- past this age every gated floor closes; public floors never do
