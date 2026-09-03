@@ -36,10 +36,10 @@ grades and the wording all live in `config.lua`.
 | Export | Does |
 |---|---|
 | `floors` | every floor at an elevator, each with whether the player may take it and why not |
-| `check` | would this floor be allowed? decides nothing and sends nothing |
-| `use` | select a floor |
-| `panel` | open the floor list through `opx77_menu` |
-| `nearest` | which configured elevator the player is standing at |
+| `isFloorAllowed` | would this floor be allowed? decides nothing and sends nothing |
+| `requestFloor` | ask for a floor; the verdict arrives on the event |
+| `openPanel` | open the floor list through `opx77_menu` |
+| `nearestElevator` | which configured elevator the player is standing at |
 | `state` | what this client knows: the job, how old the reading is, the lifts in range |
 
 `floors` defaults to the elevator the player is standing at and returns its key, so a caller
@@ -55,8 +55,12 @@ An elevator's `X` and `Y` place the shaft and are the only pair a distance is me
 `USE_RADIUS` decides whether the player may work the panel, both across the ground and on both
 halves — so one panel serves the whole shaft and a character on the twelfth storey is as close
 to it as one in the lobby. A client that cannot read its own position falls back to the host's
-3D distance, which is never the smaller of the two, so it can only ask for less than the
-server would allow.
+3D distance to the cabin, which measures something else: it can offer the panel up to
+`MATCH_RADIUS` further out than the server accepts, and withhold it on a floor the cabin is not
+on. The server's answer is the one that counts.
+
+Every radius and every timer in `config.lua` is checked at boot; one that is missing or is not
+a positive number is named in a warning and read as zero, rather than raising mid-request.
 
 Every adopted lift is locked with the host's own flag, so the elevator authority refuses a
 request sent straight off a client and this resource is the only way the cabin moves.

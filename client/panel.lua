@@ -120,6 +120,6 @@ AddEventHandler(Config.EVENT, function(payload)
   if not available() then return end
   openFor = nil
   CreateThread(function()
-    menu("status", refusal(payload), false)
+    menu("setStatus", refusal(payload), false)
   end)
 end)

@@ -42,16 +42,16 @@ end)
 ---@param elevator string|nil
 ---@param floor integer
 ---@return FloorDecision
-exports("check", function(elevator, floor)
+exports("isFloorAllowed", function(elevator, floor)
   return nobody() or Runtime.check(elevator, floor)
 end)
 
---- Select a floor. `ok = true` means asked; the verdict arrives on
+--- Ask for a floor. `ok = true` means asked; the verdict arrives on
 --- `OPX_ELEVATORS_CONFIG.EVENT`.
 ---@param elevator string|nil
 ---@param floor integer
 ---@return FloorDecision
-exports("use", function(elevator, floor)
+exports("requestFloor", function(elevator, floor)
   local owner = caller()
   if owner == nil then return response(false, { error = "export_call_required" }) end
   return Runtime.use(elevator, floor, owner)
@@ -60,13 +60,13 @@ end)
 --- Open the floor list through opx77_menu.
 ---@param elevator string|nil
 ---@return FloorDecision
-exports("panel", function(elevator)
+exports("openPanel", function(elevator)
   return nobody() or Panel.open(elevator)
 end)
 
 --- Which configured elevator the player is standing at, or `ok = false`.
 ---@return ElevatorResponse
-exports("nearest", function()
+exports("nearestElevator", function()
   local gone = nobody()
   if gone then return gone end
   local key = Runtime.nearest()

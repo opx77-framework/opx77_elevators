@@ -204,7 +204,7 @@ end
 --- Select a floor. `ok = true` means asked: the server's verdict arrives on Config.EVENT.
 ---@param key string|nil
 ---@param index integer
----@param origin string|nil  "panel" | "export", for the published event
+---@param origin string|nil  "panel", or the invoking resource's name, for the event
 ---@return table
 function Runtime.use(key, index, origin)
   key = key or Runtime.nearest()
