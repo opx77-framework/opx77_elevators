@@ -38,38 +38,8 @@ local function nowMs()
   return lastMs
 end
 
---- Coerce to a number, rejecting NaN and both infinities. Carries no range of its own.
----@param value any
----@return number|nil
-local function finiteNumber(value)
-  value = tonumber(value)
-  -- `value ~= value` is the NaN check, not a typo: NaN is the one value unequal to itself
-  if value == nil or value ~= value or value == math.huge or value == -math.huge then
-    return nil
-  end
-  return value
-end
-
---- The box every accepted coordinate must fit inside, and the ceiling on any `%d` argument.
-local BOUND = 1000000
-
---- A world coordinate: finite, and inside BOUND.
----@param value any
----@return number|nil
-local function coordinate(value)
-  local parsed = finiteNumber(value)
-  if parsed == nil or parsed > BOUND or parsed < -BOUND then return nil end
-  return parsed
-end
-
---- A whole number inside BOUND; `%d` raises on a float with no integer representation.
----@param value any
----@return integer|nil
-local function integer(value)
-  local parsed = coordinate(value)
-  if parsed == nil or parsed % 1 ~= 0 then return nil end
-  return math.floor(parsed)
-end
+--- The coercions both halves measure with; one implementation, in shared/access.lua.
+local coordinate, integer = Access.coordinate, Access.integer
 
 --- Engine identifiers are opaque: compared as lower-cased strings, never through `tonumber`.
 ---@return boolean
@@ -119,13 +89,16 @@ local function applyLock(id)
 end
 
 --- Whether a lift the host reported stands at a configured elevator. Horizontal only.
+--- The host nests the position under `position` in one shape and flattens it in the other.
+---@param key string
+---@param lift table
 ---@return boolean
-local function atElevator(elevator, lift)
+local function atElevator(key, lift)
   local position = lift.position or lift
   local x, y = coordinate(position.x), coordinate(position.y)
   if x == nil or y == nil then return false end
-  local dx, dy = x - elevator.X, y - elevator.Y
-  return dx * dx + dy * dy <= Config.MATCH_RADIUS * Config.MATCH_RADIUS
+  local flat = Access.flatDistanceSquared(key, x, y)
+  return flat ~= nil and flat <= Access.MATCH_RADIUS_SQ
 end
 
 --- Take ownership of a native lift a client has just reported. Answers a value, never raises.
@@ -139,7 +112,7 @@ function Server.adopt(key, entity, x, y, z, bucket, floorCount, activeFloor)
     local existing = adopted[index]
     if sameEntity(existing.engineEntity, entity) then
       -- the hash came off the wire: another elevator's would point this key at that cabin
-      if configured == nil or not atElevator(configured, existing) then
+      if configured == nil or not atElevator(key, existing) then
         return { ok = false, error = "wrong_place" }
       end
       for otherKey, record in pairs(owned) do
@@ -207,7 +180,7 @@ RegisterNetEvent("opx77_elevators:sighted", function(entity, x, y, z, floorCount
   local px, py, pz = coordinate(position.x), coordinate(position.y), coordinate(position.z)
   if px == nil or py == nil or pz == nil then return end
   local dx, dy, dz = x - px, y - py, z - pz
-  if dx * dx + dy * dy + dz * dz > Config.SCAN_RADIUS * Config.SCAN_RADIUS then return end
+  if dx * dx + dy * dy + dz * dz > Access.SCAN_RADIUS_SQ then return end
 
   local key, elevator = Access.locate(x, y, z, entity)
   if key == nil then return end
@@ -307,8 +280,8 @@ function Server.request(player, key, index)
   if px == nil or py == nil then return { ok = false, error = "no_position" } end
   -- across the ground, and against the DECLARED position: the cabin may be up the shaft,
   -- and an elevator is callable from every floor of its own
-  local reach = Access.flatDistanceSquared(elevator, px, py)
-  if reach == nil or reach > Config.USE_RADIUS * Config.USE_RADIUS then
+  local reach = Access.flatDistanceSquared(key, px, py)
+  if reach == nil or reach > Access.USE_RADIUS_SQ then
     return { ok = false, error = "too_far" }
   end
 
@@ -398,8 +371,8 @@ if type(Config.COMMAND) == "string" and Config.COMMAND ~= "" then
     for index = 1, #problems do lines[index] = "config: " .. problems[index] end
     local filter = args and args[1]
     local report = {}
-    for key, elevator in pairs(Config.ELEVATORS) do
-      if filter == nil or filter == key then
+    for key, elevator in pairs(Access.ELEVATORS) do
+      if (filter == nil or filter == key) and type(elevator) == "table" then
         local record = owned[key]
         local lift = record and Open77.elevators.get(record.id) or nil
         report[#report + 1] = ("%s %s pos=%.2f,%.2f,%.2f floors=%d/%d id=%s %s"):format(

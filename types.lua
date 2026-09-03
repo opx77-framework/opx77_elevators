@@ -80,14 +80,14 @@
 ---@field elevator ElevatorKey|nil
 ---@field floors FloorRow[]|nil
 
---- What `use` answers. `ok = true` means asked: the server's verdict arrives on the event.
+--- What `requestFloor` answers. `ok = true` means asked: the verdict arrives on the event.
 ---@class FloorDecision : ElevatorResponse
 ---@field elevator ElevatorKey|nil
 ---@field floor FloorIndex|nil
 ---@field label string|nil
 ---@field reason string|nil
 ---@field queued boolean|nil
----@field source "panel"|"export"|"server"|nil
+---@field source string|nil  "panel", "server", or the invoking resource's own name
 
 --- What `OpxElevators.runtime.report` answers.
 ---@class ElevatorClientState : ElevatorResponse
@@ -96,7 +96,7 @@
 ---@field onDuty boolean
 ---@field fresh boolean        whether the gate still trusts the snapshot
 ---@field ageMs integer|nil    how old it is
----@field seen integer         configured lifts in range
+---@field seen integer         configured lifts sighted within the last two scans
 ---@field bound integer        of those, ones this resource owns
 ---@field nearest ElevatorKey|nil
 

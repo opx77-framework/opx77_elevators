@@ -7,11 +7,16 @@ local Text = {}
 OpxElevators.Text = Text
 
 --- The byte length of the first `maximum` characters, or the whole text when it is shorter.
+--- Never more than `maximum * 4`, the widest a character can be.
 ---@param text string
 ---@param maximum integer
 ---@return integer
 function Text.span(text, maximum)
-  local characters, index, size = 0, 1, #text
+  local size = #text
+  -- a run of continuation bytes starts no character, so the scan is bounded in bytes as well
+  local ceiling = maximum * 4
+  if size > ceiling then size = ceiling end
+  local characters, index = 0, 1
   while index <= size do
     local byte = text:byte(index)
     -- 0x80..0xBF is a UTF-8 continuation byte, so it starts no character of its own

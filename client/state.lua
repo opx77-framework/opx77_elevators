@@ -5,6 +5,10 @@ OpxElevators = OpxElevators or {}
 local Config = OPX_ELEVATORS_CONFIG
 local Access = OpxElevators.access
 
+--- A sighting is believed for two scans, so one missed pass does not blink a panel shut.
+--- Read once: every export below reaches it, and an export answers rather than raising.
+local STALE_MS = (Access.finiteNumber(Config.SCAN_MS) or 0) * 2
+
 local State = {}
 OpxElevators.state = State
 
@@ -46,15 +50,15 @@ end
 ---@param playerY number|nil
 function State.sighted(key, lift, nowMs, playerX, playerY)
   local position = lift.position or {}
-  local elevator = Access.elevator(key)
   local flat = nil
-  if elevator ~= nil and type(playerX) == "number" and type(playerY) == "number" then
-    flat = Access.flatDistanceSquared(elevator, playerX, playerY)
+  if type(playerX) == "number" and type(playerY) == "number" then
+    flat = Access.flatDistanceSquared(key, playerX, playerY)
   end
   State.seen[key] = {
     -- across the ground, to the DECLARED position, which is what the server measures too
     reach = flat ~= nil and math.sqrt(flat) or nil,
-    -- the host's own 3D distance to the cabin, and the fallback when `reach` is unknown
+    -- the host's own 3D distance to the cabin: the fallback when `reach` is unknown, and
+    -- a different measurement, to a different point (see README)
     distance = lift.distance,
     entity = lift.engineEntity,
     -- the SERVER's id, present only once the lift is managed
@@ -68,19 +72,26 @@ function State.sighted(key, lift, nowMs, playerX, playerY)
   }
 end
 
+--- Whether a sighting is recent enough to answer with.
+---@param lift table
+---@param nowMs integer
+---@return boolean
+local function current(lift, nowMs)
+  return type(lift.atMs) == "number" and nowMs - lift.atMs <= STALE_MS
+end
+
 --- The elevator the player is standing at, or nil: the nearest within USE_RADIUS.
 --- Ranked across the ground, so every floor of a shaft is in reach of its own panel.
 ---@param nowMs integer
 ---@return string|nil key
 function State.nearest(nowMs)
-  local staleMs = Config.SCAN_MS * 2
   local bestKey, bestDistance
   for key, lift in pairs(State.seen) do
-    -- the host's 3D distance is the fallback, and is never the smaller of the two
+    -- the fallback measures a different thing, to the cabin and in three dimensions
     local reach = lift.reach or lift.distance
     -- the key breaks a tie: `pairs` order must not decide between two shafts in one lobby
-    if nowMs - lift.atMs <= staleMs and type(reach) == "number" and
-      reach <= Config.USE_RADIUS and (bestDistance == nil or reach < bestDistance or
+    if current(lift, nowMs) and type(reach) == "number" and
+      reach <= Access.USE_RADIUS and (bestDistance == nil or reach < bestDistance or
       (reach == bestDistance and key < bestKey)) then
       bestKey, bestDistance = key, reach
     end
@@ -101,7 +112,10 @@ end
 ---@return table
 function State.report(nowMs)
   local seen, bound = 0, 0
-  for _ in pairs(State.seen) do seen = seen + 1 end
+  -- only the current ones: State.seen keeps a lift the player walked away from
+  for _, lift in pairs(State.seen) do
+    if current(lift, nowMs) then seen = seen + 1 end
+  end
   for _ in pairs(State.bound) do bound = bound + 1 end
   local snapshot = State.snapshot
   return {
@@ -110,7 +124,7 @@ function State.report(nowMs)
       and snapshot.job.grade.level or nil,
     onDuty = snapshot and snapshot.job and snapshot.job.onDuty == true or false,
     -- whether the gate would still trust the snapshot
-    fresh = snapshot ~= nil and (nowMs - snapshot.atMs) <= Config.JOB_MAX_AGE_MS,
+    fresh = snapshot ~= nil and (nowMs - snapshot.atMs) <= Access.JOB_MAX_AGE_MS,
     ageMs = snapshot and (nowMs - snapshot.atMs) or nil,
     seen = seen,
     bound = bound,
