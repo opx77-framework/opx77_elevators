@@ -27,13 +27,26 @@ local SIGHTS_PER_SECOND = 12
 
 --- The scheduler clock in milliseconds; `monotonic` answers SECONDS. A non-finite reading is
 --- dropped rather than propagated: a NaN would expire nothing, an infinity everything.
+--- Holding the last reading is not a safe degradation here: every deadline in this file
+--- shares this clock, so a frozen one saturates each rate-limit window for good and stops
+--- the adoption sweep. `GetGameTimer` is the same scheduler clock, already in milliseconds.
 ---@return integer
 local lastMs = 0
+local clockWarned = false
 local function nowMs()
   local read, seconds = pcall(Open77.time.monotonic)
   if read and type(seconds) == "number" and seconds == seconds and
     seconds >= 0 and seconds < math.huge then
     lastMs = math.floor(seconds * 1000)
+    return lastMs
+  end
+  local ticked, ms = pcall(GetGameTimer)
+  if ticked and type(ms) == "number" and ms == ms and ms >= 0 and ms < math.huge then
+    if not clockWarned then
+      clockWarned = true
+      Open77.log.warn("Open77.time.monotonic unreadable; falling back to GetGameTimer")
+    end
+    lastMs = math.floor(ms)
   end
   return lastMs
 end
@@ -120,8 +133,10 @@ function Server.adopt(key, entity, x, y, z, bucket, floorCount, activeFloor)
           return { ok = false, error = "already_owned", reason = otherKey }
         end
       end
+      -- atMs matters: without it the sweep computes `at - at > UNUSED_MS`, which is never
+      -- true, so a key re-claimed after a restart could never heal from a bogus sighting
       owned[key] = { id = existing.id, entity = existing.engineEntity, bucket = bucket,
-                     floorCount = existing.floorCount }
+                     floorCount = existing.floorCount, atMs = nowMs() }
       -- locked again: the flag did not survive our restart, and adopt never reruns here
       if not applyLock(existing.id) then
         Open77.log.warn(("%s re-claimed as %s but could not be locked"):format(key,
@@ -290,6 +305,10 @@ function Server.request(player, key, index)
   if not moved then return { ok = false, error = "move_rejected" } end
   -- the adoption has served: the sweep below leaves it alone from here on
   record.usedAtMs = nowMs()
+  -- who this cabin is moving for, and until when. A player who leaves mid-travel would
+  -- otherwise have the cabin arrive and park itself open on a floor nobody answers for.
+  record.rider = player
+  record.rideEndsAtMs = record.usedAtMs + (tonumber(Config.TRAVEL_MS) or 0)
   return { ok = true, id = record.id, floor = index }
 end
 
@@ -323,21 +342,45 @@ AddEventHandler("onElevatorRemoved", function(id, _, reason)
   end
 end)
 
---- Forget a departing player's rate-limit windows and audience membership.
---- `onPlayerDisconnected` is the only departure event this platform raises.
----@param playerId integer
-function Server.forget(playerId)
+--- Forget a departing player's rate-limit windows and audience membership, and give back
+--- any cabin they left in motion.
+---
+--- This is the departure of an ADMITTED player. A connection refused at the door raises
+--- `onPlayerRejected` instead, which this resource has no reason to listen for.
+---@param playerId any  a string, like every host event argument
+---@param reason? any  `connection_closed`, or the text a disconnect, kick or ban carried
+function Server.forget(playerId, reason)
   local player = tonumber(playerId) or 0
   if player <= 0 then return end
   sightWindows[player] = nil
   requestWindows[player] = nil
   logWindows[player] = nil
   for _, players in pairs(told) do players[player] = nil end
+
+  local at = nowMs()
+  for key, record in pairs(owned) do
+    if record.rider == player then
+      record.rider = nil
+      -- still travelling: send it back to the ground floor, which every configured elevator
+      -- has and none of them gates, rather than leaving it parked wherever it was going
+      if (record.rideEndsAtMs or 0) > at then
+        record.rideEndsAtMs = nil
+        local sent = pcall(Open77.elevators.goTo, record.id, 0,
+          { travelMs = Config.TRAVEL_MS })
+        Open77.log.info(("%s: rider %d left mid-travel (%s); recalled to floor 0 (%s)")
+          :format(key, player, tostring(reason), tostring(sent)))
+      end
+    end
+  end
 end
 
 --- An adoption that has not moved a cabin within this is released, so a key bound by a
 --- bogus sighting heals: a sighting's hash cannot be verified before adoption.
 local UNUSED_MS = 600000
+
+--- How stale a rate-limit window must be before the sweep collects it. Far longer than the
+--- widest window any caller asks for, so a live player's counter is never dropped early.
+local WINDOW_GC_MS = 60000
 
 CreateThread(function()
   while true do
@@ -350,6 +393,16 @@ CreateThread(function()
           release(key)
           Open77.log.warn(("%s released: adopted %d minutes ago and never used")
             :format(key, math.floor(UNUSED_MS / 60000)))
+        end
+      end
+      -- `within` allocates a window lazily, so a packet arriving after a player has gone
+      -- recreates the entry `Server.forget` just removed and nothing ever clears it again --
+      -- and a recycled player id would inherit that stranded counter. Every window here is
+      -- spent long before this runs, so dropping the expired ones costs nothing and bounds
+      -- the tables by the number of players actually connected.
+      for _, windows in ipairs({ sightWindows, requestWindows, logWindows }) do
+        for player, window in pairs(windows) do
+          if at - (window.started or at) > WINDOW_GC_MS then windows[player] = nil end
         end
       end
     end)
