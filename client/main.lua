@@ -49,13 +49,12 @@ end
 function Runtime.call(resource, name, ...)
   local reachable, state = pcall(GetResourceState, resource)
   if not reachable or state ~= "running" then return nil, "not_running", false end
-  if type(Open77.exports) ~= "table" then return nil, "not_dispatched", false end
+  if Open77.exports == nil then return nil, "not_dispatched", false end
   -- the wrapping stops here: `await` below yields, and a yield is not safe under a pcall
   local dispatched, promise, reason = pcall(Open77.exports.call, resource, name, ...)
   if not dispatched then return nil, tostring(promise), false end
-  if type(promise) ~= "table" or type(promise.await) ~= "function" then
-    return nil, tostring(reason or "not_dispatched"), false
-  end
+  -- tested for presence, never for its Lua type: the host's promise is userdata, not a table
+  if not promise then return nil, tostring(reason or "not_dispatched"), false end
   local result, callError = promise:await()
   if callError then return nil, tostring(callError), false end
   if type(result) ~= "table" then return nil, "malformed_answer", true end
