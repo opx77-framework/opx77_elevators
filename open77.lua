@@ -23,4 +23,7 @@ permissions {
   "network.events",
   "world.elevators", -- adopt a native lift, lock it, and move the cabin
   "elevators.read",
+  -- Server: Open77.acl.isAllowed, so the diagnostic command is suggested in the chat only to a
+  -- player the ACL would let run it. Read-only.
+  "acl.read",
 }

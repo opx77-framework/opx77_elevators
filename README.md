@@ -45,6 +45,17 @@ grades and the wording all live in `config.lua`.
 `floors` defaults to the elevator the player is standing at and returns its key, so a caller
 drawing its own panel needs nothing else.
 
+## Commands
+
+| Command | Gated |
+|---|---|
+| `opx77.elevators.where [key]` | ACL — each configured elevator: position, floors, adoption and the native lift's state |
+
+The name is `COMMAND` in `config.lua`, and `false` registers nothing. Given a key it reports
+that elevator alone. Its chat suggestion, with the configured keys as the argument's help, is
+sent only to a player the ACL grants `command.<name>`; that read is why the manifest declares
+`acl.read`, and a host without the ACL reader suggests it to nobody.
+
 ## Configuration
 
 `config.lua`. Each elevator by a durable key: where the shaft is, how many floors the native
@@ -79,8 +90,8 @@ renders a string, then set `LOCALE = "<code>"`.
 
 A floor's `REASON` and `LABEL` in `config.lua` are the server owner's own words and are never
 translated: a refused floor is shown with its `REASON` where there is one, and with this
-resource's own wording only where there is not. `Open77.log` lines, the diagnostic command and
-the error codes the exports return stay English.
+resource's own wording only where there is not. `Open77.log` lines, the diagnostic command's report
+and the error codes the exports return stay English; its chat suggestion is translated.
 
 ## Community & Support
 

@@ -399,6 +399,41 @@ if type(Config.COMMAND) == "string" and Config.COMMAND ~= "" then
       end
     end
   end, true)
+
+  --- player -> the window their last suggestion went out in.
+  local suggestWindows = {}
+  --- `chat:ready` is a net event any client may send as fast as it likes.
+  local SUGGEST_EVERY_MS = 10000
+
+  --- Whether the host's ACL grants this player the command. False, never nil, when there is
+  --- no ACL reader: a restricted command is suggested only to someone it would run for.
+  ---@param player integer
+  ---@return boolean
+  local function permitted(player)
+    local acl = Open77.acl
+    if type(acl) ~= "table" or type(acl.isAllowed) ~= "function" then return false end
+    local read, allowed = pcall(acl.isAllowed, player, "command." .. Config.COMMAND)
+    return read and allowed == true
+  end
+
+  RegisterNetEvent("chat:ready", function()
+    local player = tonumber(source) or 0
+    if player <= 0 or not within(suggestWindows, player, 1, SUGGEST_EVERY_MS) then return end
+    if not permitted(player) then return end
+    local keys = {}
+    for key in pairs(Access.ELEVATORS) do keys[#keys + 1] = tostring(key) end
+    -- sorted: `pairs` order would reshuffle the list between two suggestions
+    table.sort(keys)
+    TriggerClientEvent("chat:addSuggestion", player, "/" .. Config.COMMAND,
+      locale("elevators.help.where"), {
+        { name = "key", optional = true, help = locale("elevators.help.whereKey",
+          { keys = #keys > 0 and table.concat(keys, ", ") or "-" }) },
+      })
+  end)
+
+  AddEventHandler("onPlayerDisconnected", function(playerId)
+    suggestWindows[tonumber(playerId) or 0] = nil
+  end)
 end
 
 if type(Open77.elevators) ~= "table" then
