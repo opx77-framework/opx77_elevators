@@ -52,7 +52,10 @@ drawing its own panel needs nothing else.
 | `opx77.elevators.where [key]` | ACL — each configured elevator: position, floors, adoption and the native lift's state |
 
 The name is `COMMAND` in `config.lua`, and `false` registers nothing. Given a key it reports
-that elevator alone. Its chat suggestion, with the configured keys as the argument's help, is
+that elevator alone. The report is a diagnostic dump, so it stays text: printed to the server
+console, and sent to a player who ran it as chat lines, one per elevator, each through
+`chat:addMessage` rather than `open77:command:result`, whose accepted answers `opx77_chat` does
+not print. Its chat suggestion, with the configured keys as the argument's help, is
 sent only to a player the ACL grants `command.<name>`; that read is why the manifest declares
 `acl.read`, and a host without the ACL reader suggests it to nobody.
 

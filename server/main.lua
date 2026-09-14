@@ -394,8 +394,15 @@ if type(Config.COMMAND) == "string" and Config.COMMAND ~= "" then
     for index = 1, #lines do
       local line = lines[index]
       print(line)
+      -- a report stays a chat line, sent as one: opx77_chat prints no accepted
+      -- open77:command:result, so that channel would show staff nothing
       if player > 0 then
-        TriggerClientEvent("open77:command:result", player, raw or "", true, line)
+        TriggerClientEvent("chat:addMessage", player, {
+          type = "info",
+          author = locale("elevators.title"),
+          text = line,
+          color = { 120, 220, 232 },
+        })
       end
     end
   end, true)

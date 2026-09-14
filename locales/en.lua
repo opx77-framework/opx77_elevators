@@ -1,4 +1,5 @@
 OpxElevators.Locale.register("en", {
+  ["elevators.title"]             = "ELEVATORS",
   ["elevators.locked"]            = "Locked",
   ["elevators.refused"]           = "That floor is not available.",
 
