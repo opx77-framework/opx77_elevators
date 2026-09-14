@@ -19,4 +19,7 @@ OpxElevators.Locale.register("fr", {
   ["elevators.noPosition"]        = "Votre position n'a pas pu être lue.",
   ["elevators.wrongBucket"]       = "Cet ascenseur n'est pas celui devant vous.",
   ["elevators.tooFar"]            = "Vous êtes trop loin de l'ascenseur.",
+
+  ["elevators.help.where"]        = "Affiche chaque ascenseur : position, étages et adoption.",
+  ["elevators.help.whereKey"]     = "parmi {keys} ; tous les ascenseurs si omis",
 })
