@@ -25,8 +25,10 @@ ascenseur dès le prochain signalement d'un client (voir « Adopter sur signalem
 
 - `network.events` — les signalements et les demandes d'étage vers le serveur, `bound`,
   `released`, `answer`, les lignes de chat et la suggestion de commande vers les clients.
-- `world.elevators` — adopter un ascenseur natif, le verrouiller et déplacer la cabine.
-- `elevators.read` — `Open77.elevators.nearby`, `all` et `get` : lire les ascenseurs natifs.
+- `world.elevators` — côté serveur, adopter un ascenseur natif (`adopt`, `all`, `get`), le
+  verrouiller (`setFlags`) et déplacer la cabine (`goTo`).
+- `elevators.read` — côté client, `Open77.elevators.nearby`, sans quoi aucun ascenseur n'est
+  jamais signalé.
 - `acl.read` — côté serveur, `Open77.acl.isAllowed`, pour ne suggérer la commande de diagnostic
   qu'à un joueur que l'ACL laisserait l'exécuter. Lecture seule.
 
@@ -154,8 +156,9 @@ imbrique la position sous `position` dans une forme et l'aplatit dans l'autre (`
 `owned` est l'index de ce que la resource a adopté ; `Open77.elevators.all` reste l'autorité.
 `told` retient quels joueurs ont reçu l'identifiant d'une clé, pour qu'un retrait
 (`release`) les atteigne tous ; la journalisation d'un retrait appartient à l'appelant. Le compte
-d'étages envoyé dans `bound` est relu dans l'enregistrement, que `Adopt` a réglé entre la
-configuration et l'hôte. Un refus d'adoption est journalisé au plus une fois par seconde par
+d'étages envoyé dans `bound` est relu dans l'enregistrement, que `adopt` a réglé entre la
+configuration et l'hôte : une adoption fraîche et un ascenseur déjà adopté finissent par la même
+réponse. Un refus d'adoption est journalisé au plus une fois par seconde par
 joueur (`logWindows`) : un client signale plus vite qu'un disque n'écrit.
 
 ## Le verrou : cette resource est la seule à bouger la cabine
@@ -182,15 +185,20 @@ partir.
 bucket, la portée au sol. Un ascenseur que l'hôte ne connaît plus est **libéré**, pas seulement
 oublié : un client qui garderait l'identifiant mort ne resignalerait jamais l'ascenseur.
 
+`moveCabin` est le seul chemin vers `Open77.elevators.goTo`, pour la demande comme pour le rappel
+d'un passager parti : il enveloppe l'appel dans un `pcall` (qu'il ne lève pas n'est pas documenté)
+et répond si l'hôte a accepté. Une levée devient `move_rejected`, comme un refus, au lieu de sortir
+du gestionnaire réseau sans réponse, et la ligne du rappel dit ce que l'hôte a répondu.
+
 - `within` s'arrête **à** la limite plutôt que de compter pendant toute la fenêtre.
 - La limite gouverne la cabine, pas la réponse : `answer` n'est retenu que quand la limite est la
   raison du refus. Un refus est journalisé au plus une fois par seconde par joueur, car le chemin du
   refus est le moins coûteux pour un attaquant.
 - Toute valeur venue du fil passe par `safe` (`OpxElevators.Text.Clean`, 64 caractères, caractères
   de contrôle remplacés) avant une chaîne de format : un saut de ligne y forgerait une ligne de
-  journal entière. `Text.Span` mesure en caractères UTF-8 et borne son parcours à `maximum * 4`
-  octets, car une suite d'octets de continuation ne commence aucun caractère. Les motifs Lua
-  travaillent en octets : `#value` compte des octets et `maximum` des caractères, donc un texte
+  journal entière. `span`, dans `shared/text.lua`, mesure en caractères UTF-8 et borne son
+  parcours à `maximum * 4` octets, car une suite d'octets de continuation ne commence aucun
+  caractère. Les motifs Lua travaillent en octets : `#value` compte des octets et `maximum` des caractères, donc un texte
   qui a moins d'octets que `maximum` n'a pas besoin d'être mesuré.
 
 ## Départs et balayage
@@ -216,7 +224,7 @@ terminerait le balayage pour la vie du processus) fait deux choses :
   — ne guérissait jamais.
 - Les fenêtres de cadence plus vieilles que `WINDOW_GC_MS` sont ramassées, les quatre tables
   (signalements, demandes, lignes de journal, suggestions) ensemble. `within` crée une fenêtre
-  à la demande : un paquet arrivé après le départ d'un joueur recréait l'entrée que `Forget` venait
+  à la demande : un paquet arrivé après le départ d'un joueur recréait l'entrée que `forget` venait
   d'effacer, et plus rien ne l'effaçait ; un identifiant de joueur recyclé héritait du compteur.
   `WINDOW_GC_MS` est bien plus long que la plus large fenêtre demandée, donc le compteur d'un joueur
   présent n'est jamais perdu.
