@@ -455,7 +455,6 @@ if type(Config.COMMAND) == 'string' and Config.COMMAND ~= '' then
 					type = 'info',
 					author = locale('elevators.title'),
 					text = line,
-					color = { 120, 220, 232 },
 				})
 			end
 		end
