@@ -1,8 +1,9 @@
 ---@meta
 
 --- The scheduler clock in milliseconds (`Open77.time.monotonic` answers seconds). A non-finite
---- reading is dropped; an unreadable one falls back to `GetGameTimer`, with one warning, and
---- when neither answers the last reading is kept.
+--- reading is dropped. On the server an unreadable one falls back to `GetGameTimer`, with one
+--- warning; a client has no `GetGameTimer`, so there, and when neither answers, the last reading
+--- is kept.
 ---@return integer
 function OpxElevators.NowMs() end
 

@@ -6,7 +6,7 @@ OpxElevators = OpxElevators or {}
 
 --- @author DemiAutomatic
 --- @type {integer}
---- @description Last clock reading in milliseconds, answered when both clocks fail.
+--- @description Last clock reading in milliseconds, answered when no clock reads.
 local lastMs = 0
 
 --- @author DemiAutomatic
@@ -15,8 +15,13 @@ local lastMs = 0
 local clockWarned = false
 
 --- @author DemiAutomatic
+--- @type {function|nil}
+--- @description The server's GetGameTimer; nil on a client, which has none.
+local gameTimer = rawget(_G, 'GetGameTimer')
+
+--- @author DemiAutomatic
 --- @method OpxElevators.NowMs
---- @description Reads the scheduler clock in milliseconds, falling back to GetGameTimer.
+--- @description Reads the scheduler clock in milliseconds, with the server's GetGameTimer fallback.
 --- @returns {integer}
 function OpxElevators.NowMs()
 	local read, seconds = pcall(Open77.time.monotonic)
@@ -25,7 +30,8 @@ function OpxElevators.NowMs()
 		lastMs = math.floor(seconds * 1000)
 		return lastMs
 	end
-	local ticked, ms = pcall(GetGameTimer)
+	if gameTimer == nil then return lastMs end
+	local ticked, ms = pcall(gameTimer)
 	if ticked and type(ms) == 'number' and ms == ms and ms >= 0 and ms < math.huge then
 		if not clockWarned then
 			clockWarned = true
