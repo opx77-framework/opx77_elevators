@@ -60,7 +60,6 @@ end
 --- @param playerX {number|nil}
 --- @param playerY {number|nil}
 function OpxElevators.State.Sighted(key, lift, nowMs, playerX, playerY)
-	local position = lift.position or {}
 	local flat = nil
 	if type(playerX) == 'number' and type(playerY) == 'number' then
 		flat = Access.FlatDistanceSquared(key, playerX, playerY)
@@ -68,13 +67,8 @@ function OpxElevators.State.Sighted(key, lift, nowMs, playerX, playerY)
 	State.seen[key] = {
 		reach = flat ~= nil and math.sqrt(flat) or nil,
 		distance = lift.distance,
-		entity = lift.engineEntity,
 		id = lift.id,
-		controller = lift.controllerEntity,
-		floorCount = lift.floorCount,
-		activeFloor = lift.activeFloor,
 		managed = lift.managed == true,
-		x = position.x, y = position.y, z = position.z,
 		atMs = nowMs,
 	}
 end

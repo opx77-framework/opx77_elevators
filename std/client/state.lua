@@ -7,12 +7,12 @@ OpxElevators.State = {}
 ---@type JobSnapshot|nil
 OpxElevators.State.snapshot = nil
 
---- Elevator key -> `{ id, floorCount, atMs }`, filled by the server's `bound` event.
+--- Elevator key -> `{ id }`, filled by the server's `bound` event.
 ---@type table<ElevatorKey, table>
 OpxElevators.State.bound = {}
 
---- Elevator key -> what the last scan saw of its lift (`reach`, `distance`, `id`, `managed`,
---- `atMs` are read).
+--- Elevator key -> what the last scan saw of its lift: `reach`, `distance`, `id`, `managed`,
+--- `atMs`.
 ---@type table<ElevatorKey, table>
 OpxElevators.State.seen = {}
 

@@ -166,8 +166,7 @@ function OpxElevators.Server.Adopt(key, entity, x, y, z, bucket, floorCount, act
 					return { ok = false, error = 'already_owned', reason = otherKey }
 				end
 			end
-			owned[key] = { id = existing.id, entity = existing.engineEntity, bucket = bucket,
-				floorCount = existing.floorCount, atMs = nowMs() }
+			owned[key] = { id = existing.id, floorCount = existing.floorCount, atMs = nowMs() }
 			if not applyLock(existing.id) then
 				Open77.log.warn(('%s re-claimed as %s but could not be locked'):format(key,
 					tostring(existing.id)))
@@ -186,8 +185,7 @@ function OpxElevators.Server.Adopt(key, entity, x, y, z, bucket, floorCount, act
 	if not ok then return { ok = false, error = 'adopt_raised', reason = tostring(id) } end
 	if id == nil then return { ok = false, error = 'adopt_refused', reason = tostring(reason) } end
 
-	owned[key] = { id = id, entity = entity, bucket = bucket, floorCount = floorCount,
-		atMs = nowMs() }
+	owned[key] = { id = id, floorCount = floorCount, atMs = nowMs() }
 	if not applyLock(id) then
 		Open77.log.warn(('%s adopted as %s but could not be locked'):format(key, tostring(id)))
 	end

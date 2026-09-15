@@ -162,7 +162,7 @@ end
 --- @param floorCount {integer}
 RegisterNetEvent('opx77_elevators:bound', function(key, id, floorCount)
 	if type(key) ~= 'string' or Access.Elevator(key) == nil then return end
-	State.bound[key] = { id = id, floorCount = floorCount, atMs = nowMs() }
+	State.bound[key] = { id = id }
 	sighted[key] = nil
 end)
 
