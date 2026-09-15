@@ -241,27 +241,23 @@ RegisterNetEvent('opx77_elevators:sighted', function(entity, x, y, z, floorCount
 		if activeFloor >= floorCount then activeFloor = 0 end
 	end
 
-	local existing = owned[key]
-	if existing ~= nil then
-		told[key] = told[key] or {}
-		told[key][player] = true
-		TriggerClientEvent('opx77_elevators:bound', player, key, existing.id, existing.floorCount)
-		return
-	end
-
-	local result = adopt(key, entity, x, y, z, bucket, floorCount, activeFloor)
-	if not result.ok then
-		if within(logWindows, player, 1, 1000) then
-			Open77.log.warn(('%s not adopted: %s (%s)'):format(key, result.error,
-				tostring(result.reason)))
+	local record = owned[key]
+	if record == nil then
+		local result = adopt(key, entity, x, y, z, bucket, floorCount, activeFloor)
+		if not result.ok then
+			if within(logWindows, player, 1, 1000) then
+				Open77.log.warn(('%s not adopted: %s (%s)'):format(key, result.error,
+					tostring(result.reason)))
+			end
+			return
 		end
-		return
+		Open77.log.info(('%s adopted as elevator %s in bucket %s'):format(key, tostring(result.id),
+			tostring(bucket)))
+		record = owned[key]
 	end
 	told[key] = told[key] or {}
 	told[key][player] = true
-	Open77.log.info(('%s adopted as elevator %s in bucket %s'):format(key, tostring(result.id),
-		tostring(bucket)))
-	TriggerClientEvent('opx77_elevators:bound', player, key, result.id, owned[key].floorCount)
+	TriggerClientEvent('opx77_elevators:bound', player, key, record.id, record.floorCount)
 end)
 
 --- @author DemiAutomatic
