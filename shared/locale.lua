@@ -4,8 +4,8 @@
 OpxElevators = OpxElevators or {}
 
 local catalogs = {}
-local active = "en"
-local FALLBACK = "en"
+local active = 'en'
+local FALLBACK = 'en'
 
 local Locale = {}
 
@@ -14,23 +14,23 @@ local Locale = {}
 ---@param params? table<string, string|number>
 ---@return string
 local function interpolate(text, params)
-  if not params then return text end
-  return (text:gsub("{(%w+)}", function(name)
-    local value = params[name]
-    return value ~= nil and tostring(value) or ("{" .. name .. "}")
-  end))
+	if not params then return text end
+	return (text:gsub('{(%w+)}', function(name)
+		local value = params[name]
+		return value ~= nil and tostring(value) or ('{' .. name .. '}')
+	end))
 end
 
 --- Merges `strings` into the catalogue for `code`.
 ---@param code string
 ---@param strings table<string, string>
 function Locale.register(code, strings)
-  local catalog = catalogs[code]
-  if not catalog then
-    catalog = {}
-    catalogs[code] = catalog
-  end
-  for key, text in pairs(strings) do catalog[key] = text end
+	local catalog = catalogs[code]
+	if not catalog then
+		catalog = {}
+		catalogs[code] = catalog
+	end
+	for key, text in pairs(strings) do catalog[key] = text end
 end
 
 --- Selects the catalogue player-facing text is read from. An unknown code is accepted and
@@ -38,21 +38,21 @@ end
 ---@param code string
 ---@return boolean applied
 function Locale.set(code)
-  if type(code) ~= "string" or code == "" then return false end
-  active = code
-  return true
+	if type(code) ~= 'string' or code == '' then return false end
+	active = code
+	return true
 end
 
 ---@return string
 function Locale.current()
-  return active
+	return active
 end
 
 ---@param key string
 ---@return boolean
 function Locale.exists(key)
-  return (catalogs[active] and catalogs[active][key] ~= nil)
-    or (catalogs[FALLBACK] and catalogs[FALLBACK][key] ~= nil)
+	return (catalogs[active] and catalogs[active][key] ~= nil)
+		or (catalogs[FALLBACK] and catalogs[FALLBACK][key] ~= nil)
 end
 
 --- Never returns nil: a missing translation falls back to `en` and then to the key itself.
@@ -60,11 +60,11 @@ end
 ---@param params? table<string, string|number>
 ---@return string
 function Locale.t(key, params)
-  local catalog = catalogs[active]
-  local text = (catalog and catalog[key])
-    or (catalogs[FALLBACK] and catalogs[FALLBACK][key])
-    or key
-  return interpolate(text, params)
+	local catalog = catalogs[active]
+	local text = (catalog and catalog[key])
+		or (catalogs[FALLBACK] and catalogs[FALLBACK][key])
+		or key
+	return interpolate(text, params)
 end
 
 OpxElevators.Locale = Locale

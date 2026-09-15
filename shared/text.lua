@@ -12,21 +12,21 @@ OpxElevators.Text = Text
 ---@param maximum integer
 ---@return integer
 function Text.span(text, maximum)
-  local size = #text
-  -- a run of continuation bytes starts no character, so the scan is bounded in bytes as well
-  local ceiling = maximum * 4
-  if size > ceiling then size = ceiling end
-  local characters, index = 0, 1
-  while index <= size do
-    local byte = text:byte(index)
-    -- 0x80..0xBF is a UTF-8 continuation byte, so it starts no character of its own
-    if byte < 0x80 or byte > 0xBF then
-      if characters >= maximum then return index - 1 end
-      characters = characters + 1
-    end
-    index = index + 1
-  end
-  return size
+	local size = #text
+	-- a run of continuation bytes starts no character, so the scan is bounded in bytes as well
+	local ceiling = maximum * 4
+	if size > ceiling then size = ceiling end
+	local characters, index = 0, 1
+	while index <= size do
+		local byte = text:byte(index)
+		-- 0x80..0xBF is a UTF-8 continuation byte, so it starts no character of its own
+		if byte < 0x80 or byte > 0xBF then
+			if characters >= maximum then return index - 1 end
+			characters = characters + 1
+		end
+		index = index + 1
+	end
+	return size
 end
 
 --- Display text, cleaned rather than refused: control characters out, cut to `maximum`
@@ -36,13 +36,13 @@ end
 ---@param ellipsis? string appended when the text was cut
 ---@return string|nil
 function Text.clean(value, maximum, ellipsis)
-  if value == nil then return nil end
-  if type(value) == "number" then value = tostring(value) end
-  if type(value) ~= "string" then return nil end
-  value = value:gsub("[%c]", " ")
-  -- `#value` counts bytes and `maximum` counts characters: fewer bytes needs no measuring
-  if #value <= maximum then return value end
-  local cut = Text.span(value, maximum)
-  if cut >= #value then return value end
-  return value:sub(1, cut) .. (ellipsis or "")
+	if value == nil then return nil end
+	if type(value) == 'number' then value = tostring(value) end
+	if type(value) ~= 'string' then return nil end
+	value = value:gsub('[%c]', ' ')
+	-- `#value` counts bytes and `maximum` counts characters: fewer bytes needs no measuring
+	if #value <= maximum then return value end
+	local cut = Text.span(value, maximum)
+	if cut >= #value then return value end
+	return value:sub(1, cut) .. (ellipsis or '')
 end
