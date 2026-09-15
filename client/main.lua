@@ -60,14 +60,13 @@ end
 function OpxElevators.Runtime.Call(resource, name, ...)
 	local reachable, state = pcall(GetResourceState, resource)
 	if not reachable or state ~= 'running' then return nil, 'not_running', false end
-	if Open77.exports == nil then return nil, 'not_dispatched', false end
 	local dispatched, promise, reason = pcall(Open77.exports.call, resource, name, ...)
 	if not dispatched then return nil, tostring(promise), false end
 	if not promise then return nil, tostring(reason or 'not_dispatched'), false end
 	local result, callError = promise:await()
 	if callError then return nil, tostring(callError), false end
 	if type(result) ~= 'table' then return nil, 'malformed_answer', true end
-	if result.ok == false then return nil, tostring(result.error or 'refused'), true end
+	if result.ok ~= true then return nil, tostring(result.error or 'refused'), true end
 	return result, nil, true
 end
 

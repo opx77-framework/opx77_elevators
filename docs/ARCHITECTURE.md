@@ -83,10 +83,13 @@ des indices.
   cible a répondu : un refus du cœur veut dire « pas de personnage », et la porte se ferme tout de
   suite (`State.Forget`) au lieu d'attendre que l'instantané vieillisse ; un appel qui n'a jamais
   abouti laisse l'instantané vieillir.
-- **Un appel d'export est vérifié à trois niveaux** : non envoyé, erreur d'appel, refus. La
-  promesse de l'hôte est un userdata, testée par présence et jamais par type ; `await` cède la
-  main et céder sous un `pcall` n'est pas sûr, donc seul le lancement est enveloppé. `pull` cède
-  pour la même raison et tourne dans un thread à lui plutôt que sous le `pcall` de la boucle.
+- **Un appel d'export est vérifié à trois niveaux** : non envoyé, erreur d'appel, refus — toute
+  réponse dont `ok` n'est pas `true`, pas seulement `ok == false`, pour qu'une table sans `ok` ne
+  passe pas pour un succès. `Open77.exports` est toujours une table sur la plateforme et n'est pas
+  testé. La promesse de l'hôte est un userdata, testée par présence et jamais par type ; `await`
+  cède la main et céder sous un `pcall` n'est pas sûr, donc seul le lancement est enveloppé.
+  `pull` cède pour la même raison et tourne dans un thread à lui plutôt que sous le `pcall` de la
+  boucle.
 - **Un étage public reste ouvert sans instantané** (`OpxElevators.Access.Evaluate`) : une panne
   du cœur ne doit pas enfermer un hall. Un étage gardé se ferme au-delà de `JOB_MAX_AGE_MS`.
 - **L'âge se mesure avec `FiniteNumber`, jamais `Coordinate`** : une horloge en millisecondes

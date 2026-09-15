@@ -3,8 +3,9 @@
 OpxElevators.Runtime = {}
 
 --- One call to another resource's client export; coroutine only. Checks the three levels
---- (not dispatched, call error, refusal). The third return says whether the target answered
---- at all: a refusal is authoritative, a call that never landed is not.
+--- (not dispatched, call error, refusal: any answer whose `ok` is not `true`). The third return
+--- says whether the target answered at all: a refusal is authoritative, a call that never
+--- landed is not.
 ---@param resource string
 ---@param name string
 ---@param ... any
