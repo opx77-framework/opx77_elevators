@@ -74,6 +74,11 @@ des indices.
   horodatés. Il est renouvelé à chaque `opx77:client:onPlayerLoaded` et
   `opx77:client:playerDataChanged` — une promotion change les étages à l'instant — et relu toutes
   les `POLL_MS` par `pull` : le cœur peut encore démarrer, la boucle redemande simplement.
+- **Un arrêt d'`opx77_core` vaut un déchargement.** Un redémarrage du cœur ne lève pas
+  `opx77:client:onPlayerUnloaded` ; `onClientResourceStop` avec `name == 'opx77_core'` fait donc
+  la même chose que ce gestionnaire (`State.Forget`), sans quoi les étages gardés resteraient
+  ouverts sur un personnage qui n'existe plus jusqu'à ce que l'instantané vieillisse. Le cœur
+  revenu, `pull` ou `onPlayerLoaded` redonne l'instantané.
 - **Refusé n'est pas injoignable.** `OpxElevators.Runtime.Call` rend en troisième valeur si la
   cible a répondu : un refus du cœur veut dire « pas de personnage », et la porte se ferme tout de
   suite (`State.Forget`) au lieu d'attendre que l'instantané vieillisse ; un appel qui n'a jamais

@@ -21,7 +21,8 @@ OpxElevators.State.seen = {}
 ---@param nowMs integer
 function OpxElevators.State.Adopt(playerData, nowMs) end
 
---- Drops the snapshot: the core answered that there is no character.
+--- Drops the snapshot: the character unloaded, opx77_core stopped, or the core answered that
+--- there is no character.
 function OpxElevators.State.Forget() end
 
 --- Records what one scan saw of a configured lift.

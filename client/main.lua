@@ -335,9 +335,13 @@ end)
 
 --- @author DemiAutomatic
 --- @event onClientResourceStop
---- @description Stops the loop and forgets bindings and sightings.
+--- @description Forgets the snapshot on an opx77_core stop; resets everything on its own.
 --- @param name {string}
 AddEventHandler('onClientResourceStop', function(name)
+	if name == CORE then
+		State.Forget()
+		return
+	end
 	if name ~= RESOURCE then return end
 	running = false
 	State.bound, State.seen, sighted = {}, {}, {}
