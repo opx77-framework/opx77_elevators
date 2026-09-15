@@ -1,4 +1,6 @@
---- The floor list, drawn by opx77_menu. Optional: a missing menu costs one log line.
+--- @author DemiAutomatic
+--- @file client/panel.lua
+--- @description The floor list drawn through opx77_menu, which is optional.
 
 OpxElevators = OpxElevators or {}
 
@@ -8,13 +10,24 @@ local Runtime = OpxElevators.Runtime
 OpxElevators.Panel = {}
 local Panel = OpxElevators.Panel
 
+--- @author DemiAutomatic
+--- @type {string}
+--- @description The resource that draws the floor list.
 local MENU = 'opx77_menu'
+
+--- @author DemiAutomatic
+--- @type {string}
+--- @description Local event opx77_menu raises when a row is selected.
 local EVENT = 'opx77_elevators:floor'
 
---- The elevator whose panel this file last opened, cleared by the answer to it.
+--- @author DemiAutomatic
+--- @type {string|nil}
+--- @description Elevator whose panel this file last opened, until answered.
 local openFor = nil
 
---- Refusal code -> catalogue key. A code with no entry reads as `elevators.refused`.
+--- @author DemiAutomatic
+--- @type {table<string, string>}
+--- @description Catalogue key a player reads for each refusal code.
 local REFUSAL = {
 	no_elevator_nearby = 'elevators.noElevatorNearby',
 	no_such_elevator = 'elevators.noSuchElevator',
@@ -33,33 +46,40 @@ local REFUSAL = {
 	too_far = 'elevators.tooFar',
 }
 
---- What a player is shown for a refusal: the operator's own REASON where there is one,
---- otherwise this resource's own wording for the code.
----@param payload table
----@return string
+--- @author DemiAutomatic
+--- @method refusal
+--- @description Answers the operator's REASON, or this resource's wording for the code.
+--- @param payload {table}
+--- @returns {string}
 local function refusal(payload)
 	local reason = payload.reason
 	if type(reason) == 'string' and reason ~= '' then return reason end
 	return locale(REFUSAL[payload.error] or 'elevators.refused')
 end
 
---- Whether the panel can be drawn at all right now.
----@return boolean, string|nil
+--- @author DemiAutomatic
+--- @method available
+--- @description Whether opx77_menu is running to draw the panel.
+--- @returns {boolean, string|nil}
 local function available()
 	if GetResourceState(MENU) ~= 'running' then return false, 'menu_not_running' end
 	return true
 end
 
---- One call to opx77_menu.
----@param name string
----@return table|nil, string|nil
+--- @author DemiAutomatic
+--- @method menu
+--- @description Calls one opx77_menu export.
+--- @param name {string}
+--- @returns {table|nil, string|nil}
 local function menu(name, ...)
 	return Runtime.Call(MENU, name, ...)
 end
 
---- Open the floor list for one elevator. `ok = true` means asked: the menu opens on a thread.
----@param key string|nil  defaults to the elevator the player is standing at
----@return table
+--- @author DemiAutomatic
+--- @method OpxElevators.Panel.Open
+--- @description Opens an elevator's floor list through opx77_menu on a thread.
+--- @param key {string|nil}
+--- @returns {table}
 function OpxElevators.Panel.Open(key)
 	local ready, why = available()
 	if not ready then return { ok = false, error = why } end
@@ -68,7 +88,6 @@ function OpxElevators.Panel.Open(key)
 	if not listing.ok then return listing end
 	local elevator = OpxElevators.Access.Elevator(listing.elevator)
 	if #listing.floors == 0 then
-		-- every floor is gated and DENIED_FLOORS is "hidden"
 		return { ok = false, error = 'no_floors_available', elevator = listing.elevator }
 	end
 
@@ -79,7 +98,6 @@ function OpxElevators.Panel.Open(key)
 		items[index] = {
 			id = 'floor_' .. tostring(row.index),
 			label = row.label,
-			-- the refusal is the row's value: a greyed row with nothing beside it reads as broken
 			value = (not row.ok) and (row.reason or locale('elevators.locked')) or nil,
 			disabled = not row.ok,
 			data = { elevator = listing.elevator, floor = row.index },
@@ -103,19 +121,23 @@ function OpxElevators.Panel.Open(key)
 	return { ok = true, queued = true, elevator = listing.elevator, floors = #items }
 end
 
---- A row was selected; `data` is the table this file put on the item, echoed back untouched.
+--- @author DemiAutomatic
+--- @event opx77_elevators:floor
+--- @description Requests the floor of a row selected in the panel.
+--- @param payload {table}
 AddEventHandler(EVENT, function(payload)
 	if type(payload) ~= 'table' or payload.action ~= 'select' then return end
 	local data = payload.data
 	if type(data) ~= 'table' then return end
-	-- `openFor` is cleared by the answer below, not here
 	Runtime.Use(data.elevator, data.floor, 'panel')
 end)
 
---- Put an outcome under the list. Best-effort: the list has already closed on select.
+--- @author DemiAutomatic
+--- @event opx77:elevators
+--- @description Shows a refusal under the panel this file opened, once.
+--- @param payload {table}
 AddEventHandler(Config.EVENT, function(payload)
 	if type(payload) ~= 'table' or payload.ok == true then return end
-	-- only for a panel this file opened, and only once: any resource may raise this name
 	if openFor == nil then return end
 	if not available() then return end
 	openFor = nil

@@ -1,4 +1,6 @@
---- The server half: adoption, and everything a server can prove about a floor request.
+--- @author DemiAutomatic
+--- @file server/main.lua
+--- @description Server half: adoption, floor requests, the sweep and the diagnostic.
 
 local Config = OPX_ELEVATORS_CONFIG
 local Access = OpxElevators.Access
@@ -7,32 +9,50 @@ local Text = OpxElevators.Text
 OpxElevators.Server = {}
 local Server = OpxElevators.Server
 
---- key -> { id, entity, bucket, floorCount }. What this resource adopted; the host's `all()`
---- is the authority and this is the index.
+--- @author DemiAutomatic
+--- @type {table<string, table>}
+--- @description Elevator key to what this resource adopted; the host is authority.
 local owned = {}
 
---- key -> { [player] = true }. Who has been told an id, so a removal can reach them.
+--- @author DemiAutomatic
+--- @type {table<string, table<integer, boolean>>}
+--- @description Elevator key to the players told its id.
 local told = {}
 
+--- @author DemiAutomatic
+--- @type {table<integer, table>}
+--- @description Per-player rate-limit windows for sightings, requests and log lines.
 local sightWindows, requestWindows, logWindows = {}, {}, {}
 
---- key -> true once the floor-count mismatch has been logged.
+--- @author DemiAutomatic
+--- @type {table<string, boolean>}
+--- @description Elevator keys whose floor-count mismatch has been logged.
 local warnedCount = {}
 
---- True once the "not an engine hash" rejection has been logged.
+--- @author DemiAutomatic
+--- @type {boolean}
+--- @description Whether the malformed engine hash rejection has been logged.
 local warnedEntity = false
 
---- Sightings per second, per player.
+--- @author DemiAutomatic
+--- @type {integer}
+--- @description Sightings one player may report per second.
 local SIGHTS_PER_SECOND = 12
 
---- The scheduler clock in milliseconds; `monotonic` answers SECONDS. A non-finite reading is
---- dropped rather than propagated: a NaN would expire nothing, an infinity everything.
---- Holding the last reading is not a safe degradation here: every deadline in this file
---- shares this clock, so a frozen one saturates each rate-limit window for good and stops
---- the adoption sweep. `GetGameTimer` is the same scheduler clock, already in milliseconds.
----@return integer
+--- @author DemiAutomatic
+--- @type {integer}
+--- @description Last clock reading in milliseconds, answered when both clocks fail.
 local lastMs = 0
+
+--- @author DemiAutomatic
+--- @type {boolean}
+--- @description Whether the fallback to GetGameTimer has been logged.
 local clockWarned = false
+
+--- @author DemiAutomatic
+--- @method nowMs
+--- @description Reads the scheduler clock in milliseconds, falling back to GetGameTimer.
+--- @returns {integer}
 local function nowMs()
 	local read, seconds = pcall(Open77.time.monotonic)
 	if read and type(seconds) == 'number' and seconds == seconds and
@@ -51,27 +71,40 @@ local function nowMs()
 	return lastMs
 end
 
---- The coercions both halves measure with; one implementation, in shared/access.lua.
 local coordinate, integer = Access.Coordinate, Access.Integer
 
---- Engine identifiers are opaque: compared as lower-cased strings, never through `tonumber`.
----@return boolean
+--- @author DemiAutomatic
+--- @method sameEntity
+--- @description Compares two opaque engine identifiers as lower-cased strings.
+--- @param left {any}
+--- @param right {any}
+--- @returns {boolean}
 local function sameEntity(left, right)
 	return tostring(left or ''):lower() == tostring(right or ''):lower()
 end
 
---- The longest a value off the wire may be once it reaches a log line, in characters.
+--- @author DemiAutomatic
+--- @type {integer}
+--- @description Longest wire value a log line carries, in characters.
 local MAX_LOGGED = 64
 
---- Strip control characters and cap the length before a wire value reaches a format string,
---- where a newline would forge a whole log line.
----@param value any
----@return string
+--- @author DemiAutomatic
+--- @method safe
+--- @description Cleans and caps a wire value before it reaches a log line.
+--- @param value {any}
+--- @returns {string}
 local function safe(value)
 	return Text.Clean(value, MAX_LOGGED, '...') or ''
 end
 
----@return boolean
+--- @author DemiAutomatic
+--- @method within
+--- @description Counts one event in a player's window, refusing past the limit.
+--- @param windows {table<integer, table>}
+--- @param player {integer}
+--- @param limit {integer}
+--- @param spanMs {integer}
+--- @returns {boolean}
 local function within(windows, player, limit, spanMs)
 	local at = nowMs()
 	local window = windows[player]
@@ -79,20 +112,16 @@ local function within(windows, player, limit, spanMs)
 		window = { started = at, count = 0 }
 		windows[player] = window
 	end
-	-- stops AT the limit rather than climbing for the window's life
 	if window.count >= limit then return false end
 	window.count = window.count + 1
 	return true
 end
 
--- ---------------------------------------------------------------------------
--- Adoption
--- ---------------------------------------------------------------------------
-
---- Lock player requests on one lift, so this file is the only thing that moves the cabin.
---- `powered` is left exactly as the host set it.
----@param id integer
----@return boolean
+--- @author DemiAutomatic
+--- @method applyLock
+--- @description Sets the host's locked flag on one lift, keeping the others.
+--- @param id {integer}
+--- @returns {boolean}
 local function applyLock(id)
 	local lift = Open77.elevators.get(id)
 	if lift == nil then return false end
@@ -101,11 +130,12 @@ local function applyLock(id)
 	return Open77.elevators.setFlags(id, flags) == true
 end
 
---- Whether a lift the host reported stands at a configured elevator. Horizontal only.
---- The host nests the position under `position` in one shape and flattens it in the other.
----@param key string
----@param lift table
----@return boolean
+--- @author DemiAutomatic
+--- @method atElevator
+--- @description Whether a host-reported lift stands at a configured elevator.
+--- @param key {string}
+--- @param lift {ServerElevator}
+--- @returns {boolean}
 local function atElevator(key, lift)
 	local position = lift.position or lift
 	local x, y = coordinate(position.x), coordinate(position.y)
@@ -114,17 +144,25 @@ local function atElevator(key, lift)
 	return flat ~= nil and flat <= Access.MATCH_RADIUS_SQ
 end
 
---- Take ownership of a native lift a client has just reported. Answers a value, never raises.
----@return table
+--- @author DemiAutomatic
+--- @method OpxElevators.Server.Adopt
+--- @description Takes ownership of a sighted native lift, or re-claims it.
+--- @param key {string}
+--- @param entity {string}
+--- @param x {number}
+--- @param y {number}
+--- @param z {number}
+--- @param bucket {integer}
+--- @param floorCount {integer}
+--- @param activeFloor {integer}
+--- @returns {table}
 function OpxElevators.Server.Adopt(key, entity, x, y, z, bucket, floorCount, activeFloor)
 	local configured = Access.Elevator(key)
-	-- type-checked: `all()` is a host call, and a raise off a net event is swallowed silently
 	local adopted = Open77.elevators.all(bucket)
 	local adoptedCount = type(adopted) == 'table' and #adopted or 0
 	for index = 1, adoptedCount do
 		local existing = adopted[index]
 		if sameEntity(existing.engineEntity, entity) then
-			-- the hash came off the wire: another elevator's would point this key at that cabin
 			if configured == nil or not atElevator(key, existing) then
 				return { ok = false, error = 'wrong_place' }
 			end
@@ -133,11 +171,8 @@ function OpxElevators.Server.Adopt(key, entity, x, y, z, bucket, floorCount, act
 					return { ok = false, error = 'already_owned', reason = otherKey }
 				end
 			end
-			-- atMs matters: without it the sweep computes `at - at > UNUSED_MS`, which is never
-			-- true, so a key re-claimed after a restart could never heal from a bogus sighting
 			owned[key] = { id = existing.id, entity = existing.engineEntity, bucket = bucket,
 				floorCount = existing.floorCount, atMs = nowMs() }
-			-- locked again: the flag did not survive our restart, and adopt never reruns here
 			if not applyLock(existing.id) then
 				Open77.log.warn(('%s re-claimed as %s but could not be locked'):format(key,
 					tostring(existing.id)))
@@ -146,7 +181,6 @@ function OpxElevators.Server.Adopt(key, entity, x, y, z, bucket, floorCount, act
 		end
 	end
 
-	-- wrapped: whether `adopt` can throw is not documented
 	local ok, id, reason = pcall(Open77.elevators.adopt, {
 		engineEntity = entity,
 		position = { x = x, y = y, z = z },
@@ -160,14 +194,20 @@ function OpxElevators.Server.Adopt(key, entity, x, y, z, bucket, floorCount, act
 	owned[key] = { id = id, entity = entity, bucket = bucket, floorCount = floorCount,
 		atMs = nowMs() }
 	if not applyLock(id) then
-		-- a line rather than a rollback: an unlocked lift also answers a client directly
 		Open77.log.warn(('%s adopted as %s but could not be locked'):format(key, tostring(id)))
 	end
 	return { ok = true, id = id }
 end
 
---- A client says it is looking at an unmanaged lift.
---- The server picks the elevator, the bucket and the floor count itself.
+--- @author DemiAutomatic
+--- @event opx77_elevators:sighted
+--- @description Validates a client's lift sighting and adopts or binds the elevator.
+--- @param entity {string}
+--- @param x {number}
+--- @param y {number}
+--- @param z {number}
+--- @param floorCount {integer}
+--- @param activeFloor {integer}
 RegisterNetEvent('opx77_elevators:sighted', function(entity, x, y, z, floorCount, activeFloor)
 	local player = tonumber(source) or 0
 	if player <= 0 then return end
@@ -175,11 +215,9 @@ RegisterNetEvent('opx77_elevators:sighted', function(entity, x, y, z, floorCount
 
 	if type(entity) ~= 'string' or
 		entity:match('^0[xX]%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x$') == nil then
-		-- said once: a wire-format disagreement otherwise shows up only as `not_adopted` forever
 		if not warnedEntity then
 			warnedEntity = true
-			Open77.log.warn(('sighting rejected: first argument is not an engine hash (%s); the ' ..
-				'client and this handler disagree about the wire format'):format(safe(entity)))
+			Open77.log.warn(('sighting rejected: first argument is not an engine hash (%s); the client and this handler disagree about the wire format'):format(safe(entity)))
 		end
 		return
 	end
@@ -200,15 +238,11 @@ RegisterNetEvent('opx77_elevators:sighted', function(entity, x, y, z, floorCount
 	local key, elevator = Access.Locate(x, y, z, entity)
 	if key == nil then return end
 
-	-- the bucket is the ELEVATOR's, never the reporter's: otherwise the first passer-by fixes
-	-- the lift to their own bucket for the life of the process
 	local bucket = integer(elevator.BUCKET) or 0
 	if position.bucket ~= bucket then return end
 
-	-- same for the floor count: it becomes the ceiling every index is checked against
 	local declared = integer(elevator.FLOOR_COUNT)
 	if declared ~= nil and declared >= 1 then
-		-- once per elevator, not once per sighting
 		if declared ~= floorCount and not warnedCount[key] then
 			warnedCount[key] = true
 			Open77.log.warn(('%s reported %d floors, config declares %d; using the config'):format(
@@ -228,7 +262,6 @@ RegisterNetEvent('opx77_elevators:sighted', function(entity, x, y, z, floorCount
 
 	local result = Server.Adopt(key, entity, x, y, z, bucket, floorCount, activeFloor)
 	if not result.ok then
-		-- throttled with the request refusals: a client sights faster than a disk write
 		if within(logWindows, player, 1, 1000) then
 			Open77.log.warn(('%s not adopted: %s (%s)'):format(key, result.error,
 				tostring(result.reason)))
@@ -239,14 +272,15 @@ RegisterNetEvent('opx77_elevators:sighted', function(entity, x, y, z, floorCount
 	told[key][player] = true
 	Open77.log.info(('%s adopted as elevator %s in bucket %s'):format(key, tostring(result.id),
 		tostring(bucket)))
-	-- the count is read from the record: `Server.Adopt` settled it between config and host
 	local record = owned[key]
 	TriggerClientEvent('opx77_elevators:bound', player, key, result.id,
 		record and record.floorCount or floorCount)
 end)
 
---- Drop an adoption and tell everyone who was handed its id. The logging is the caller's.
----@param key string
+--- @author DemiAutomatic
+--- @method release
+--- @description Drops an adoption and tells every player handed its id.
+--- @param key {string}
 local function release(key)
 	owned[key] = nil
 	local audience = told[key]
@@ -257,12 +291,13 @@ local function release(key)
 	told[key] = nil
 end
 
--- ---------------------------------------------------------------------------
--- Requests
--- ---------------------------------------------------------------------------
-
---- Everything the server can prove about one floor request.
----@return table
+--- @author DemiAutomatic
+--- @method OpxElevators.Server.Request
+--- @description Checks everything the server can prove, then moves the cabin.
+--- @param player {integer}
+--- @param key {any}
+--- @param index {any}
+--- @returns {table}
 function OpxElevators.Server.Request(player, key, index)
 	if not within(requestWindows, player, Config.REQUESTS_PER_WINDOW,
 		Config.REQUEST_WINDOW_MS) then
@@ -279,7 +314,6 @@ function OpxElevators.Server.Request(player, key, index)
 	if record == nil then return { ok = false, error = 'not_adopted' } end
 	local lift = Open77.elevators.get(record.id)
 	if lift == nil then
-		-- released, not just forgotten: a client keeping the dead id never re-reports the lift
 		release(key)
 		return { ok = false, error = 'not_adopted' }
 	end
@@ -293,45 +327,44 @@ function OpxElevators.Server.Request(player, key, index)
 	if position.bucket ~= lift.bucket then return { ok = false, error = 'wrong_bucket' } end
 	local px, py = coordinate(position.x), coordinate(position.y)
 	if px == nil or py == nil then return { ok = false, error = 'no_position' } end
-	-- across the ground, and against the DECLARED position: the cabin may be up the shaft,
-	-- and an elevator is callable from every floor of its own
 	local reach = Access.FlatDistanceSquared(key, px, py)
 	if reach == nil or reach > Access.USE_RADIUS_SQ then
 		return { ok = false, error = 'too_far' }
 	end
 
-	-- no job clause: this VM cannot ask opx77_core for a job (see README)
 	local moved = Open77.elevators.goTo(record.id, index, { travelMs = Config.TRAVEL_MS })
 	if not moved then return { ok = false, error = 'move_rejected' } end
-	-- the adoption has served: the sweep below leaves it alone from here on
 	record.usedAtMs = nowMs()
-	-- who this cabin is moving for, and until when. A player who leaves mid-travel would
-	-- otherwise have the cabin arrive and park itself open on a floor nobody answers for.
 	record.rider = player
 	record.rideEndsAtMs = record.usedAtMs + (tonumber(Config.TRAVEL_MS) or 0)
 	return { ok = true, id = record.id, floor = index }
 end
 
+--- @author DemiAutomatic
+--- @event opx77_elevators:request
+--- @description Runs a player's floor request and answers the verdict.
+--- @param key {any}
+--- @param index {any}
 RegisterNetEvent('opx77_elevators:request', function(key, index)
 	local player = tonumber(source) or 0
 	if player <= 0 then return end
 	local result = Server.Request(player, key, index)
-	-- the rate limit governs the cabin, not this answer; dropped only when it is the reason
 	if result.error ~= 'rate_limited' then
 		TriggerClientEvent('opx77_elevators:answer', player, safe(key), integer(index),
 			result.ok, result.error)
 	end
-	-- one line per player per second: the refusal path is the cheap one for an attacker
 	if not result.ok and within(logWindows, player, 1, 1000) then
 		Open77.log.info(('player %d refused %s floor %s: %s'):format(player, safe(key), safe(index),
 			tostring(result.error)))
 	end
 end)
 
--- ---------------------------------------------------------------------------
--- Keeping the index honest
--- ---------------------------------------------------------------------------
-
+--- @author DemiAutomatic
+--- @event onElevatorRemoved
+--- @description Releases the adoption of a lift the host removed.
+--- @param id {integer}
+--- @param _ {any}
+--- @param reason {any}
 AddEventHandler('onElevatorRemoved', function(id, _, reason)
 	for key, record in pairs(owned) do
 		if record.id == tonumber(id) then
@@ -342,13 +375,11 @@ AddEventHandler('onElevatorRemoved', function(id, _, reason)
 	end
 end)
 
---- Forget a departing player's rate-limit windows and audience membership, and give back
---- any cabin they left in motion.
----
---- This is the departure of an ADMITTED player. A connection refused at the door raises
---- `onPlayerRejected` instead, which this resource has no reason to listen for.
----@param playerId any  a string, like every host event argument
----@param reason? any  `connection_closed`, or the text a disconnect, kick or ban carried
+--- @author DemiAutomatic
+--- @method OpxElevators.Server.Forget
+--- @description Forgets a departing player and recalls a cabin left in motion.
+--- @param playerId {any}
+--- @param reason {any}
 function OpxElevators.Server.Forget(playerId, reason)
 	local player = tonumber(playerId) or 0
 	if player <= 0 then return end
@@ -361,8 +392,6 @@ function OpxElevators.Server.Forget(playerId, reason)
 	for key, record in pairs(owned) do
 		if record.rider == player then
 			record.rider = nil
-			-- still travelling: send it back to the ground floor, which every configured elevator
-			-- has and none of them gates, rather than leaving it parked wherever it was going
 			if (record.rideEndsAtMs or 0) > at then
 				record.rideEndsAtMs = nil
 				local sent = pcall(Open77.elevators.goTo, record.id, 0,
@@ -374,18 +403,19 @@ function OpxElevators.Server.Forget(playerId, reason)
 	end
 end
 
---- An adoption that has not moved a cabin within this is released, so a key bound by a
---- bogus sighting heals: a sighting's hash cannot be verified before adoption.
+--- @author DemiAutomatic
+--- @type {integer}
+--- @description Age past which a never-used adoption is released.
 local UNUSED_MS = 600000
 
---- How stale a rate-limit window must be before the sweep collects it. Far longer than the
---- widest window any caller asks for, so a live player's counter is never dropped early.
+--- @author DemiAutomatic
+--- @type {integer}
+--- @description Age past which the sweep collects a rate-limit window.
 local WINDOW_GC_MS = 60000
 
 CreateThread(function()
 	while true do
 		Wait(60000)
-		-- pcall: a raise from a host call here would end the sweep for the life of the process
 		local swept, failure = pcall(function()
 			local at = nowMs()
 			for key, record in pairs(owned) do
@@ -395,11 +425,6 @@ CreateThread(function()
 						:format(key, math.floor(UNUSED_MS / 60000)))
 				end
 			end
-			-- `within` allocates a window lazily, so a packet arriving after a player has gone
-			-- recreates the entry `Server.Forget` just removed and nothing ever clears it again --
-			-- and a recycled player id would inherit that stranded counter. Every window here is
-			-- spent long before this runs, so dropping the expired ones costs nothing and bounds
-			-- the tables by the number of players actually connected.
 			for _, windows in ipairs({ sightWindows, requestWindows, logWindows }) do
 				for player, window in pairs(windows) do
 					if at - (window.started or at) > WINDOW_GC_MS then windows[player] = nil end
@@ -410,14 +435,15 @@ CreateThread(function()
 	end
 end)
 
+--- @author DemiAutomatic
+--- @event onPlayerDisconnected
+--- @description Forgets an admitted player's windows, audiences and ride.
 AddEventHandler('onPlayerDisconnected', Server.Forget)
 
--- ---------------------------------------------------------------------------
--- Diagnostics
--- ---------------------------------------------------------------------------
-
 if type(Config.COMMAND) == 'string' and Config.COMMAND ~= '' then
-	--- Restricted: it prints world positions and adoption state, which is operator information.
+	--- @author DemiAutomatic
+	--- @command OPX_ELEVATORS_CONFIG.COMMAND
+	--- @description Prints every elevator's position, floors and adoption state.
 	RegisterCommand(Config.COMMAND, function(commandSource, args, raw)
 		local lines = {}
 		local problems = Access.Problems()
@@ -438,7 +464,6 @@ if type(Config.COMMAND) == 'string' and Config.COMMAND ~= '' then
 						tostring(lift.activeFloor), tostring(lift.flags)) or 'not adopted')
 			end
 		end
-		-- sorted: `pairs` order would reshuffle the report between two runs
 		table.sort(report)
 		for index = 1, #report do lines[#lines + 1] = report[index] end
 		lines[#lines + 1] = ('denied=%s membership=%s'):format(Config.DENIED_FLOORS,
@@ -447,8 +472,6 @@ if type(Config.COMMAND) == 'string' and Config.COMMAND ~= '' then
 		for index = 1, #lines do
 			local line = lines[index]
 			print(line)
-			-- a report stays a chat line, sent as one: opx77_chat prints no accepted
-			-- open77:command:result, so that channel would show staff nothing
 			if player > 0 then
 				TriggerClientEvent('chat:addMessage', player, {
 					type = 'info',
@@ -460,15 +483,21 @@ if type(Config.COMMAND) == 'string' and Config.COMMAND ~= '' then
 		end
 	end, true)
 
-	--- player -> the window their last suggestion went out in.
+	--- @author DemiAutomatic
+	--- @type {table<integer, table>}
+	--- @description Per-player window of the last suggestion sent.
 	local suggestWindows = {}
-	--- `chat:ready` is a net event any client may send as fast as it likes.
+
+	--- @author DemiAutomatic
+	--- @type {integer}
+	--- @description Shortest gap between two suggestions to one player.
 	local SUGGEST_EVERY_MS = 10000
 
-	--- Whether the host's ACL grants this player the command. False, never nil, when there is
-	--- no ACL reader: a restricted command is suggested only to someone it would run for.
-	---@param player integer
-	---@return boolean
+	--- @author DemiAutomatic
+	--- @method permitted
+	--- @description Whether the host's ACL grants this player the command.
+	--- @param player {integer}
+	--- @returns {boolean}
 	local function permitted(player)
 		local acl = Open77.acl
 		if type(acl) ~= 'table' or type(acl.isAllowed) ~= 'function' then return false end
@@ -476,13 +505,15 @@ if type(Config.COMMAND) == 'string' and Config.COMMAND ~= '' then
 		return read and allowed == true
 	end
 
+	--- @author DemiAutomatic
+	--- @event chat:ready
+	--- @description Suggests the diagnostic command to a player the ACL grants it.
 	RegisterNetEvent('chat:ready', function()
 		local player = tonumber(source) or 0
 		if player <= 0 or not within(suggestWindows, player, 1, SUGGEST_EVERY_MS) then return end
 		if not permitted(player) then return end
 		local keys = {}
 		for key in pairs(Access.ELEVATORS) do keys[#keys + 1] = tostring(key) end
-		-- sorted: `pairs` order would reshuffle the list between two suggestions
 		table.sort(keys)
 		TriggerClientEvent('chat:addSuggestion', player, '/' .. Config.COMMAND,
 			locale('elevators.help.where'), {
@@ -491,6 +522,10 @@ if type(Config.COMMAND) == 'string' and Config.COMMAND ~= '' then
 			})
 	end)
 
+	--- @author DemiAutomatic
+	--- @event onPlayerDisconnected
+	--- @description Forgets a departing player's suggestion window.
+	--- @param playerId {any}
 	AddEventHandler('onPlayerDisconnected', function(playerId)
 		suggestWindows[tonumber(playerId) or 0] = nil
 	end)
@@ -501,12 +536,9 @@ if type(Open77.elevators) ~= 'table' then
 else
 	local problems = Access.Problems()
 	for index = 1, #problems do
-		-- said at boot as well as on demand: every one produces the same symptom, a dead button
 		Open77.log.warn('config: ' .. problems[index])
 	end
 
-	--- Warn once if the official package this one replaces is also running. Deferred to a
-	--- thread: at load time a resource listed after this one is still `discovered`.
 	CreateThread(function()
 		local read, state = pcall(GetResourceState, 'open77_elevators')
 		local official = read and tostring(state or ''):lower() or ''

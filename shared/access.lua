@@ -1,4 +1,6 @@
---- The gate: reads config.lua and decides which floors a character may select.
+--- @author DemiAutomatic
+--- @file shared/access.lua
+--- @description The gate: config reads, coercions and floor decisions for both halves.
 
 OpxElevators = OpxElevators or {}
 
@@ -7,20 +9,24 @@ local Access = OpxElevators.Access
 
 local Config = OPX_ELEVATORS_CONFIG
 
---- The configured elevators, or an empty table: every read below is reachable from an
---- export, and `problems()` reports a missing ELEVATORS rather than raising on it.
+--- @author DemiAutomatic
+--- @type {table<string, ElevatorSpec>}
+--- @description The configured elevators, or an empty table when missing.
 local ELEVATORS = type(Config.ELEVATORS) == 'table' and Config.ELEVATORS or {}
 OpxElevators.Access.ELEVATORS = ELEVATORS
 
---- Failure ranking, so the closest near-miss is reported rather than the first `pairs` found.
+--- @author DemiAutomatic
+--- @type {table<string, integer>}
+--- @description Failure ranking, so the closest near-miss is reported.
 local RANK = { off_duty = 3, grade_too_low = 2, job_required = 1 }
 
---- Coerce to a number, rejecting NaN and both infinities. Carries no range of its own.
----@param value any
----@return number|nil
+--- @author DemiAutomatic
+--- @method finiteNumber
+--- @description Coerces to a number, rejecting NaN and both infinities.
+--- @param value {any}
+--- @returns {number|nil}
 local function finiteNumber(value)
 	value = tonumber(value)
-	-- `value ~= value` is the NaN check, not a typo: NaN is the one value unequal to itself
 	if value == nil or value ~= value or value == math.huge or value == -math.huge then
 		return nil
 	end
@@ -28,13 +34,17 @@ local function finiteNumber(value)
 end
 OpxElevators.Access.FiniteNumber = finiteNumber
 
---- The box every accepted coordinate must fit inside, and the ceiling on any `%d` argument.
+--- @author DemiAutomatic
+--- @type {integer}
+--- @description Box every accepted coordinate fits in, and the %d ceiling.
 local BOUND = 1000000
 OpxElevators.Access.BOUND = BOUND
 
---- A world coordinate: finite, and inside BOUND.
----@param value any
----@return number|nil
+--- @author DemiAutomatic
+--- @method coordinate
+--- @description Coerces a world coordinate: finite and inside BOUND.
+--- @param value {any}
+--- @returns {number|nil}
 local function coordinate(value)
 	local parsed = finiteNumber(value)
 	if parsed == nil or parsed > BOUND or parsed < -BOUND then return nil end
@@ -42,9 +52,11 @@ local function coordinate(value)
 end
 OpxElevators.Access.Coordinate = coordinate
 
---- A whole number inside BOUND; `%d` raises on a float with no integer representation.
----@param value any
----@return integer|nil
+--- @author DemiAutomatic
+--- @method integer
+--- @description Coerces a whole number inside BOUND.
+--- @param value {any}
+--- @returns {integer|nil}
 local function integer(value)
 	local parsed = coordinate(value)
 	if parsed == nil or parsed % 1 ~= 0 then return nil end
@@ -52,11 +64,14 @@ local function integer(value)
 end
 OpxElevators.Access.Integer = integer
 
---- key -> its declared ENTITY, lower-cased once at load.
+--- @author DemiAutomatic
+--- @type {table<string, string>}
+--- @description Elevator key to its declared ENTITY, lower-cased once at load.
 local ENTITY_HASHES = {}
 
---- key -> its validated `{ x, y }`. Built once, because `locate` walks every elevator for
---- every lift of every scan: a coordinate coerced there is coerced on all of them, forever.
+--- @author DemiAutomatic
+--- @type {table<string, table>}
+--- @description Elevator key to its validated x and y, built once at load.
 local POSITIONS = {}
 
 for key, elevator in pairs(ELEVATORS) do
@@ -67,27 +82,38 @@ for key, elevator in pairs(ELEVATORS) do
 	end
 end
 
---- The three radii, squared once at load. A value `problems()` refuses reads as zero here,
---- so a bad one is a warning at boot rather than a raise inside a net event.
+--- @author DemiAutomatic
+--- @type {number}
+--- @description MATCH_RADIUS read once; an invalid value reads as zero.
 local MATCH_RADIUS = finiteNumber(Config.MATCH_RADIUS) or 0
+
+--- @author DemiAutomatic
+--- @type {number}
+--- @description USE_RADIUS read once; an invalid value reads as zero.
 local USE_RADIUS = finiteNumber(Config.USE_RADIUS) or 0
+
+--- @author DemiAutomatic
+--- @type {number}
+--- @description SCAN_RADIUS read once; an invalid value reads as zero.
 local SCAN_RADIUS = finiteNumber(Config.SCAN_RADIUS) or 0
 OpxElevators.Access.MATCH_RADIUS_SQ = MATCH_RADIUS * MATCH_RADIUS
 OpxElevators.Access.USE_RADIUS = USE_RADIUS
 OpxElevators.Access.USE_RADIUS_SQ = USE_RADIUS * USE_RADIUS
 OpxElevators.Access.SCAN_RADIUS_SQ = SCAN_RADIUS * SCAN_RADIUS
 
---- Read once for the same reason: an export must answer, and comparing a millisecond count
---- with a value an operator mistyped as a string raises.
+--- @author DemiAutomatic
+--- @type {number}
+--- @description JOB_MAX_AGE_MS read once; an invalid value reads as zero.
 local JOB_MAX_AGE_MS = finiteNumber(Config.JOB_MAX_AGE_MS) or 0
 OpxElevators.Access.JOB_MAX_AGE_MS = JOB_MAX_AGE_MS
 
---- Horizontal distance, squared, or nil when the elevator has no usable X and Y.
---- Z never enters it: an elevator is callable from every floor of its own shaft.
----@param key string
----@param x number  already a coordinate: the caller validates its own reading once
----@param y number
----@return number|nil
+--- @author DemiAutomatic
+--- @method OpxElevators.Access.FlatDistanceSquared
+--- @description Squared horizontal distance to an elevator's declared position.
+--- @param key {string}
+--- @param x {number}
+--- @param y {number}
+--- @returns {number|nil}
 function OpxElevators.Access.FlatDistanceSquared(key, x, y)
 	local at = POSITIONS[key]
 	if at == nil then return nil end
@@ -95,12 +121,11 @@ function OpxElevators.Access.FlatDistanceSquared(key, x, y)
 	return dx * dx + dy * dy
 end
 
--- ---------------------------------------------------------------------------
--- Reading the configuration
--- ---------------------------------------------------------------------------
-
----@param key any
----@return table|nil
+--- @author DemiAutomatic
+--- @method OpxElevators.Access.Elevator
+--- @description Answers one configured elevator by key, or nil.
+--- @param key {any}
+--- @returns {ElevatorSpec|nil}
 function OpxElevators.Access.Elevator(key)
 	if type(key) ~= 'string' then return nil end
 	local elevator = ELEVATORS[key]
@@ -108,10 +133,12 @@ function OpxElevators.Access.Elevator(key)
 	return elevator
 end
 
---- One configured floor by its NATIVE index, never its position in FLOORS.
----@param key string
----@param index integer
----@return table|nil
+--- @author DemiAutomatic
+--- @method OpxElevators.Access.Floor
+--- @description Answers one configured floor by its native index, or nil.
+--- @param key {string}
+--- @param index {integer}
+--- @returns {FloorSpec|nil}
 function OpxElevators.Access.Floor(key, index)
 	local elevator = Access.Elevator(key)
 	index = finiteNumber(index)
@@ -120,18 +147,20 @@ function OpxElevators.Access.Floor(key, index)
 	if type(floors) ~= 'table' then return nil end
 	for position = 1, #floors do
 		local floor = floors[position]
-		-- type-checked, not assumed: `FLOORS = { 0, 1 }` is a config a person writes
 		if type(floor) == 'table' and floor.INDEX == index then return floor end
 	end
 	return nil
 end
 
---- Which configured elevator a native lift at (x, y, z) is, matched across the ground.
---- A declared ENTITY pins which one; X and Y must still agree, and Z never decides.
----@param entity string|nil
----@return string|nil key, table|nil elevator
+--- @author DemiAutomatic
+--- @method OpxElevators.Access.Locate
+--- @description Matches a native lift position to a configured elevator.
+--- @param x {any}
+--- @param y {any}
+--- @param z {any}
+--- @param entity {string|nil}
+--- @returns {string|nil, ElevatorSpec|nil}
 function OpxElevators.Access.Locate(x, y, z, entity)
-	-- z is validated and then ignored: a report with a broken axis is a broken report
 	x, y = coordinate(x), coordinate(y)
 	if x == nil or y == nil or coordinate(z) == nil then return nil, nil end
 	local hash = type(entity) == 'string' and entity:lower() or nil
@@ -145,7 +174,6 @@ function OpxElevators.Access.Locate(x, y, z, entity)
 			if declared ~= nil and hash ~= nil and declared == hash then
 				return key, ELEVATORS[key]
 			end
-			-- the key breaks a tie: `pairs` order must not decide between two shafts in one lobby
 			if declared == nil and (bestDistance == nil or flat < bestDistance or
 				(flat == bestDistance and key < bestKey)) then
 				bestKey, bestDistance = key, flat
@@ -156,14 +184,12 @@ function OpxElevators.Access.Locate(x, y, z, entity)
 	return bestKey, ELEVATORS[bestKey]
 end
 
--- ---------------------------------------------------------------------------
--- The gate
--- ---------------------------------------------------------------------------
-
---- What grade of `name` this character holds, or nil for none.
----@param snapshot table
----@param name string
----@return integer|nil
+--- @author DemiAutomatic
+--- @method heldGrade
+--- @description Answers the grade of a job this character holds, or nil.
+--- @param snapshot {JobSnapshot}
+--- @param name {string}
+--- @returns {integer|nil}
 local function heldGrade(snapshot, name)
 	local job = snapshot.job
 	if type(job) == 'table' and job.name == name then
@@ -174,18 +200,18 @@ local function heldGrade(snapshot, name)
 	return finiteNumber(snapshot.jobs[name])
 end
 
---- May this character select this floor?
----@param floor table|nil
----@param snapshot table|nil  as client/state.lua keeps it, or nil when the core never answered
----@param nowMs integer
----@return boolean ok, string|nil error
+--- @author DemiAutomatic
+--- @method OpxElevators.Access.Evaluate
+--- @description Decides whether a character snapshot may select a floor.
+--- @param floor {FloorSpec|nil}
+--- @param snapshot {JobSnapshot|nil}
+--- @param nowMs {integer}
+--- @returns {boolean, string|nil}
 function OpxElevators.Access.Evaluate(floor, snapshot, nowMs)
 	if type(floor) ~= 'table' then return false, 'no_such_floor' end
 	local required = floor.JOBS
-	-- a public floor stays open with no snapshot: a core outage must not trap a lobby
 	if type(required) ~= 'table' or next(required) == nil then return true, nil end
 
-	-- `finiteNumber`, never `coordinate`: a millisecond clock outgrows BOUND mid-session
 	local atMs = type(snapshot) == 'table' and finiteNumber(snapshot.atMs) or nil
 	if atMs == nil then return false, 'no_character' end
 	if nowMs - atMs > JOB_MAX_AGE_MS then return false, 'job_stale' end
@@ -199,7 +225,6 @@ function OpxElevators.Access.Evaluate(floor, snapshot, nowMs)
 				if RANK.grade_too_low > worstRank then
 					worst, worstRank = 'grade_too_low', RANK.grade_too_low
 				end
-			-- duty lives on the primary job only: the membership map holds grades, not a clock
 			elseif floor.ON_DUTY == true and
 				not (snapshot.job.name == name and snapshot.job.onDuty == true) then
 				if RANK.off_duty > worstRank then worst, worstRank = 'off_duty', RANK.off_duty end
@@ -211,11 +236,13 @@ function OpxElevators.Access.Evaluate(floor, snapshot, nowMs)
 	return false, worst
 end
 
---- Every floor to draw for this character, in configured order.
----@param key string
----@param snapshot table|nil
----@param nowMs integer
----@return table rows  `{ index, label, ok, error, reason }`
+--- @author DemiAutomatic
+--- @method OpxElevators.Access.List
+--- @description Builds every floor row to draw for a character, in order.
+--- @param key {string}
+--- @param snapshot {JobSnapshot|nil}
+--- @param nowMs {integer}
+--- @returns {FloorRow[]}
 function OpxElevators.Access.List(key, snapshot, nowMs)
 	local elevator = Access.Elevator(key)
 	if elevator == nil then return {} end
@@ -225,7 +252,6 @@ function OpxElevators.Access.List(key, snapshot, nowMs)
 	local rows = {}
 	for position = 1, #floors do
 		local floor = floors[position]
-		-- a malformed entry is skipped, not drawn: `problems()` is where it is reported
 		if type(floor) == 'table' then
 			local ok, failure = Access.Evaluate(floor, snapshot, nowMs)
 			if ok or not hide then
@@ -242,16 +268,21 @@ function OpxElevators.Access.List(key, snapshot, nowMs)
 	return rows
 end
 
---- The axes, in report order; hoisted, so no table is built per elevator per call.
+--- @author DemiAutomatic
+--- @type {string[]}
+--- @description The coordinate axes, in report order.
 local AXES = { 'X', 'Y', 'Z' }
 
---- The config keys a distance or a timer does arithmetic on. All must be above zero.
+--- @author DemiAutomatic
+--- @type {string[]}
+--- @description Config keys a distance or timer uses, all above zero.
 local NUMBERS = { 'MATCH_RADIUS', 'USE_RADIUS', 'SCAN_RADIUS', 'SCAN_MS', 'POLL_MS',
 	'JOB_MAX_AGE_MS', 'TRAVEL_MS', 'REQUEST_WINDOW_MS', 'REQUESTS_PER_WINDOW' }
 
---- Everything wrong with the configuration that can be seen without a world.
---- It cannot check a job NAME: those live in opx77_core, which this VM cannot ask.
----@return string[]
+--- @author DemiAutomatic
+--- @method OpxElevators.Access.Problems
+--- @description Lists every configuration error visible without a world, sorted.
+--- @returns {string[]}
 function OpxElevators.Access.Problems()
 	local lines = {}
 	if type(Config.ELEVATORS) ~= 'table' then
@@ -269,7 +300,6 @@ function OpxElevators.Access.Problems()
 		if type(elevator) ~= 'table' then
 			lines[#lines + 1] = tostring(key) .. ': every ELEVATORS entry must be a table'
 		else
-			-- the axes come first: every distance and every `%.2f` below them raises on a string
 			for _, axis in ipairs(AXES) do
 				if coordinate(elevator[axis]) == nil then
 					lines[#lines + 1] = ('%s: %s must be a finite number inside %d'):format(key, axis,
@@ -281,7 +311,6 @@ function OpxElevators.Access.Problems()
 			if type(floors) ~= 'table' or #floors == 0 then
 				lines[#lines + 1] = key .. ': no FLOORS, so its panel would be empty'
 			else
-				-- FLOOR_COUNT gets its own test: `%d` raises on a number with no integer form
 				local count = integer(elevator.FLOOR_COUNT)
 				if elevator.FLOOR_COUNT ~= nil and (count == nil or count < 1) then
 					lines[#lines + 1] = key .. ': FLOOR_COUNT must be a whole number, 1 or more'
@@ -292,14 +321,12 @@ function OpxElevators.Access.Problems()
 				for position = 1, #floors do
 					local floor = floors[position]
 					local where = ('%s floor #%d'):format(key, position)
-					-- type-checked before any field read: a hole in FLOORS lands here as nil
 					if type(floor) ~= 'table' then
 						lines[#lines + 1] = where .. ': every FLOORS entry must be a table'
 					else
 						local index = integer(floor.INDEX)
 						if index == nil or index < 0 then
 							lines[#lines + 1] = where .. ': INDEX must be a whole number, 0 or more'
-							-- nothing below may use it: `seen[nil]` raises, on the value just diagnosed
 							index = nil
 						elseif count ~= nil and index >= count then
 							lines[#lines + 1] = ('%s: INDEX %d is outside FLOOR_COUNT %d'):format(where,

@@ -1,3 +1,7 @@
+--- @author DemiAutomatic
+--- @file locales/en.lua
+--- @description English player-facing text for the elevator resource.
+
 OpxElevators.Locale.register('en', {
 	['elevators.title'] = 'ELEVATORS',
 	['elevators.locked'] = 'Locked',

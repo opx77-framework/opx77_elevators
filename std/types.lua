@@ -91,7 +91,7 @@
 ---@field queued boolean|nil
 ---@field source string|nil  "panel", "server", or the invoking resource's own name
 
---- What `OpxElevators.runtime.report` answers.
+--- What `OpxElevators.Runtime.Report` answers.
 ---@class ElevatorClientState : ElevatorResponse
 ---@field job string|nil       the primary job's name, or nil
 ---@field grade integer|nil

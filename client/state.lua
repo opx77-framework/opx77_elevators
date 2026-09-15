@@ -1,32 +1,40 @@
---- Client-side state: the character's job snapshot, the lifts in range, and the bound ids.
+--- @author DemiAutomatic
+--- @file client/state.lua
+--- @description Client state: the job snapshot, lifts in range and bound ids.
 
 OpxElevators = OpxElevators or {}
 
 local Config = OPX_ELEVATORS_CONFIG
 local Access = OpxElevators.Access
 
---- A sighting is believed for two scans, so one missed pass does not blink a panel shut.
---- Read once: every export below reaches it, and an export answers rather than raising.
+--- @author DemiAutomatic
+--- @type {number}
+--- @description How long a sighting is believed: two scans, read once.
 local STALE_MS = (Access.FiniteNumber(Config.SCAN_MS) or 0) * 2
 
 OpxElevators.State = {}
 local State = OpxElevators.State
 
---- `{ job = PlayerJob|nil, jobs = table|nil, atMs = integer }`, or nil when the core has
---- never answered.
----@type table|nil
+--- @author DemiAutomatic
+--- @type {JobSnapshot|nil}
+--- @description The character's job snapshot, or nil before the core answers.
 OpxElevators.State.snapshot = nil
 
---- key -> { id, floorCount, atMs }. Filled by the server's `bound` event.
+--- @author DemiAutomatic
+--- @type {table<string, table>}
+--- @description Elevator key to the id the server bound, filled by bound.
 OpxElevators.State.bound = {}
 
---- key -> what one scan saw of a lift. `reach`, `distance`, `id`, `managed` and `atMs`
---- are read.
+--- @author DemiAutomatic
+--- @type {table<string, table>}
+--- @description Elevator key to what the last scan saw of its lift.
 OpxElevators.State.seen = {}
 
---- Adopt a PlayerData snapshot from opx77_core; only the job travels.
----@param playerData table|nil
----@param nowMs integer
+--- @author DemiAutomatic
+--- @method OpxElevators.State.Adopt
+--- @description Keeps the job fields of an opx77_core PlayerData snapshot.
+--- @param playerData {table|nil}
+--- @param nowMs {integer}
 function OpxElevators.State.Adopt(playerData, nowMs)
 	if type(playerData) ~= 'table' then return end
 	State.snapshot = {
@@ -36,18 +44,21 @@ function OpxElevators.State.Adopt(playerData, nowMs)
 	}
 end
 
---- The core said there is no character; different from a call that never landed.
+--- @author DemiAutomatic
+--- @method OpxElevators.State.Forget
+--- @description Drops the snapshot once the core says there is no character.
 function OpxElevators.State.Forget()
 	State.snapshot = nil
 end
 
---- Record what one scan saw. `lift` is a `Open77.elevators.nearby` entry; `playerX` and
---- `playerY` are the player's own, or nil when the host would not answer them.
----@param key string
----@param lift table
----@param nowMs integer
----@param playerX number|nil
----@param playerY number|nil
+--- @author DemiAutomatic
+--- @method OpxElevators.State.Sighted
+--- @description Records what one scan saw of a configured lift.
+--- @param key {string}
+--- @param lift {NativeLift}
+--- @param nowMs {integer}
+--- @param playerX {number|nil}
+--- @param playerY {number|nil}
 function OpxElevators.State.Sighted(key, lift, nowMs, playerX, playerY)
 	local position = lift.position or {}
 	local flat = nil
@@ -55,13 +66,9 @@ function OpxElevators.State.Sighted(key, lift, nowMs, playerX, playerY)
 		flat = Access.FlatDistanceSquared(key, playerX, playerY)
 	end
 	State.seen[key] = {
-		-- across the ground, to the DECLARED position, which is what the server measures too
 		reach = flat ~= nil and math.sqrt(flat) or nil,
-		-- the host's own 3D distance to the cabin: the fallback when `reach` is unknown, and
-		-- a different measurement, to a different point (see README)
 		distance = lift.distance,
 		entity = lift.engineEntity,
-		-- the SERVER's id, present only once the lift is managed
 		id = lift.id,
 		controller = lift.controllerEntity,
 		floorCount = lift.floorCount,
@@ -72,24 +79,25 @@ function OpxElevators.State.Sighted(key, lift, nowMs, playerX, playerY)
 	}
 end
 
---- Whether a sighting is recent enough to answer with.
----@param lift table
----@param nowMs integer
----@return boolean
+--- @author DemiAutomatic
+--- @method current
+--- @description Whether a sighting is recent enough to answer with.
+--- @param lift {table}
+--- @param nowMs {integer}
+--- @returns {boolean}
 local function current(lift, nowMs)
 	return type(lift.atMs) == 'number' and nowMs - lift.atMs <= STALE_MS
 end
 
---- The elevator the player is standing at, or nil: the nearest within USE_RADIUS.
---- Ranked across the ground, so every floor of a shaft is in reach of its own panel.
----@param nowMs integer
----@return string|nil key
+--- @author DemiAutomatic
+--- @method OpxElevators.State.Nearest
+--- @description Answers the nearest sighted elevator within USE_RADIUS, or nil.
+--- @param nowMs {integer}
+--- @returns {string|nil}
 function OpxElevators.State.Nearest(nowMs)
 	local bestKey, bestDistance
 	for key, lift in pairs(State.seen) do
-		-- the fallback measures a different thing, to the cabin and in three dimensions
 		local reach = lift.reach or lift.distance
-		-- the key breaks a tie: `pairs` order must not decide between two shafts in one lobby
 		if current(lift, nowMs) and type(reach) == 'number' and
 			reach <= Access.USE_RADIUS and (bestDistance == nil or reach < bestDistance or
 			(reach == bestDistance and key < bestKey)) then
@@ -99,20 +107,23 @@ function OpxElevators.State.Nearest(nowMs)
 	return bestKey
 end
 
---- The floor list for this player, at this elevator.
----@param key string
----@param nowMs integer
----@return table rows
+--- @author DemiAutomatic
+--- @method OpxElevators.State.Rows
+--- @description Builds the floor rows for this player at one elevator.
+--- @param key {string}
+--- @param nowMs {integer}
+--- @returns {FloorRow[]}
 function OpxElevators.State.Rows(key, nowMs)
 	return Access.List(key, State.snapshot, nowMs)
 end
 
---- What `state` publishes: enough to debug a panel that will not open.
----@param nowMs integer
----@return table
+--- @author DemiAutomatic
+--- @method OpxElevators.State.Report
+--- @description Summarises what this client knows, for the state export.
+--- @param nowMs {integer}
+--- @returns {table}
 function OpxElevators.State.Report(nowMs)
 	local seen, bound = 0, 0
-	-- only the current ones: State.seen keeps a lift the player walked away from
 	for _, lift in pairs(State.seen) do
 		if current(lift, nowMs) then seen = seen + 1 end
 	end
@@ -123,7 +134,6 @@ function OpxElevators.State.Report(nowMs)
 		grade = snapshot and snapshot.job and snapshot.job.grade
 			and snapshot.job.grade.level or nil,
 		onDuty = snapshot and snapshot.job and snapshot.job.onDuty == true or false,
-		-- whether the gate would still trust the snapshot
 		fresh = snapshot ~= nil and (nowMs - snapshot.atMs) <= Access.JOB_MAX_AGE_MS,
 		ageMs = snapshot and (nowMs - snapshot.atMs) or nil,
 		seen = seen,
