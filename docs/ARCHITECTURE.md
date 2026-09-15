@@ -97,9 +97,11 @@ qui compte, jamais celle de la cabine.
 - `POSITIONS` et `ENTITY_HASHES` sont construits une fois au chargement : `Locate` parcourt chaque
   ascenseur pour chaque ascenseur natif de chaque scan, et une coordonnée convertie là le serait à
   chaque fois.
-- Les trois rayons et `JOB_MAX_AGE_MS` sont lus une fois au chargement, et une valeur que
-  `Problems` refuse vaut zéro : une mauvaise valeur devient un avertissement au démarrage plutôt
-  qu'une levée dans un gestionnaire réseau ou une export, qui doit répondre.
+- Les trois rayons et `JOB_MAX_AGE_MS` (dans `shared/access.lua`), `TRAVEL_MS`,
+  `REQUEST_WINDOW_MS` et `REQUESTS_PER_WINDOW` (dans `server/main.lua`) et `POLL_MS` (dans
+  `client/main.lua`) sont lus une fois au chargement, et une valeur que `Problems` refuse vaut
+  zéro : une mauvaise valeur devient un avertissement au démarrage plutôt qu'une levée dans un
+  gestionnaire réseau, une export ou chaque tour de scan.
 - `Locate` : un `ENTITY` déclaré désigne l'ascenseur, X et Y doivent quand même concorder ; un
   signalement dont un axe est cassé est un signalement cassé. À distance égale, la clé départage :
   l'ordre de `pairs` ne doit pas choisir entre deux gaines d'un même hall. `State.Nearest` applique
@@ -292,8 +294,9 @@ minuscules : les fichiers de traduction des opérateurs l'appellent.
 
 - **L'horloge client garde sa dernière lecture** au lieu de retomber sur `GetGameTimer` : figée,
   elle ne relit plus le cœur et ne fait plus vieillir ni l'instantané ni les signalements.
-- **`POLL_MS`, `SCAN_MS`, `TRAVEL_MS`, `REQUEST_WINDOW_MS` et `REQUESTS_PER_WINDOW` sont lus bruts**
-  alors que le README dit qu'une valeur invalide est lue comme zéro : une chaîne y lève (à chaque
-  scan côté client, dans le gestionnaire de demande côté serveur).
+- **`SCAN_MS` reste passé brut à `Wait`** : une valeur invalide arrête la boucle de scan du client
+  au lieu de la faire tourner à chaque image, ce qui est la panne la moins coûteuse ; `STALE_MS` la
+  lit comme zéro et le panneau ne s'ouvre alors jamais, symptôme que `Problems` explique au
+  démarrage.
 - **`openFor` n'est pas effacé par une réponse acceptée** : un refus ultérieur venu d'un autre
   appelant peut encore s'afficher sous un panneau déjà fermé.

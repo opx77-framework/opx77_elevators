@@ -27,6 +27,11 @@ local CORE = 'opx77_core'
 local SIGHT_RETRY_MS = 5000
 
 --- @author DemiAutomatic
+--- @type {number}
+--- @description POLL_MS read once; an invalid value reads as zero.
+local POLL_MS = Access.FiniteNumber(Config.POLL_MS) or 0
+
+--- @author DemiAutomatic
 --- @type {table<string, integer>}
 --- @description Elevator key to when its lift was last reported.
 local sighted = {}
@@ -329,7 +334,7 @@ AddEventHandler('onClientResourceStart', function(name)
 			local ticked, failure = pcall(function()
 				local at = nowMs()
 				if at >= nextPullAtMs then
-					nextPullAtMs = at + Config.POLL_MS
+					nextPullAtMs = at + POLL_MS
 					CreateThread(pull)
 				end
 				scan()

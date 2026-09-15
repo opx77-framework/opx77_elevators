@@ -74,6 +74,21 @@ end
 local coordinate, integer = Access.Coordinate, Access.Integer
 
 --- @author DemiAutomatic
+--- @type {number}
+--- @description TRAVEL_MS read once; an invalid value reads as zero.
+local TRAVEL_MS = Access.FiniteNumber(Config.TRAVEL_MS) or 0
+
+--- @author DemiAutomatic
+--- @type {number}
+--- @description REQUEST_WINDOW_MS read once; an invalid value reads as zero.
+local REQUEST_WINDOW_MS = Access.FiniteNumber(Config.REQUEST_WINDOW_MS) or 0
+
+--- @author DemiAutomatic
+--- @type {number}
+--- @description REQUESTS_PER_WINDOW read once; an invalid value reads as zero.
+local REQUESTS_PER_WINDOW = Access.FiniteNumber(Config.REQUESTS_PER_WINDOW) or 0
+
+--- @author DemiAutomatic
 --- @method sameEntity
 --- @description Compares two opaque engine identifiers as lower-cased strings.
 --- @param left {any}
@@ -137,7 +152,7 @@ end
 --- @param index {integer}
 --- @returns {boolean}
 local function moveCabin(id, index)
-	local called, moved = pcall(Open77.elevators.goTo, id, index, { travelMs = Config.TRAVEL_MS })
+	local called, moved = pcall(Open77.elevators.goTo, id, index, { travelMs = TRAVEL_MS })
 	return called and moved ~= nil and moved ~= false
 end
 
@@ -310,8 +325,7 @@ end
 --- @param index {any}
 --- @returns {table}
 function OpxElevators.Server.Request(player, key, index)
-	if not within(requestWindows, player, Config.REQUESTS_PER_WINDOW,
-		Config.REQUEST_WINDOW_MS) then
+	if not within(requestWindows, player, REQUESTS_PER_WINDOW, REQUEST_WINDOW_MS) then
 		return { ok = false, error = 'rate_limited' }
 	end
 
@@ -346,7 +360,7 @@ function OpxElevators.Server.Request(player, key, index)
 	if not moveCabin(record.id, index) then return { ok = false, error = 'move_rejected' } end
 	record.usedAtMs = nowMs()
 	record.rider = player
-	record.rideEndsAtMs = record.usedAtMs + (tonumber(Config.TRAVEL_MS) or 0)
+	record.rideEndsAtMs = record.usedAtMs + TRAVEL_MS
 	return { ok = true, id = record.id, floor = index }
 end
 
