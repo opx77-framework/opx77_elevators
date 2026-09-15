@@ -80,7 +80,7 @@ function OpxElevators.Access.Locate(x, y, z, entity) end
 --- May this character select this floor? Public floors are always open; a gated floor needs a
 --- fresh snapshot and one of its jobs at grade (and on duty when `ON_DUTY`). A refusal names
 --- the closest near-miss: `off_duty` over `grade_too_low` over `job_required`.
----@param floor FloorSpec|nil
+---@param floor FloorSpec a configured floor table
 ---@param snapshot JobSnapshot|nil
 ---@param nowMs integer
 ---@return boolean ok

@@ -152,13 +152,12 @@ end
 --- @param activeFloor {integer}
 --- @returns {table}
 function OpxElevators.Server.Adopt(key, entity, x, y, z, bucket, floorCount, activeFloor)
-	local configured = Access.Elevator(key)
 	local adopted = Open77.elevators.all(bucket)
 	local adoptedCount = type(adopted) == 'table' and #adopted or 0
 	for index = 1, adoptedCount do
 		local existing = adopted[index]
 		if sameEntity(existing.engineEntity, entity) then
-			if configured == nil or not atElevator(key, existing) then
+			if not atElevator(key, existing) then
 				return { ok = false, error = 'wrong_place' }
 			end
 			for otherKey, record in pairs(owned) do
@@ -265,9 +264,7 @@ RegisterNetEvent('opx77_elevators:sighted', function(entity, x, y, z, floorCount
 	told[key][player] = true
 	Open77.log.info(('%s adopted as elevator %s in bucket %s'):format(key, tostring(result.id),
 		tostring(bucket)))
-	local record = owned[key]
-	TriggerClientEvent('opx77_elevators:bound', player, key, result.id,
-		record and record.floorCount or floorCount)
+	TriggerClientEvent('opx77_elevators:bound', player, key, result.id, owned[key].floorCount)
 end)
 
 --- @author DemiAutomatic
@@ -299,8 +296,7 @@ function OpxElevators.Server.Request(player, key, index)
 	local elevator = Access.Elevator(key)
 	if elevator == nil then return { ok = false, error = 'no_such_elevator' } end
 	index = integer(index)
-	local floor = index ~= nil and Access.Floor(key, index) or nil
-	if floor == nil then return { ok = false, error = 'no_such_floor' } end
+	if Access.Floor(key, index) == nil then return { ok = false, error = 'no_such_floor' } end
 
 	local record = owned[key]
 	if record == nil then return { ok = false, error = 'not_adopted' } end

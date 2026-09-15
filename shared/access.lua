@@ -203,7 +203,7 @@ function OpxElevators.Access.Locate(x, y, z, entity)
 		local flat = dx * dx + dy * dy
 		if flat <= radius then
 			local declared = ENTITY_HASHES[key]
-			if declared ~= nil and hash ~= nil and declared == hash then
+			if declared ~= nil and declared == hash then
 				return key, ELEVATORS[key]
 			end
 			if declared == nil and (bestDistance == nil or flat < bestDistance or
@@ -235,12 +235,11 @@ end
 --- @author DemiAutomatic
 --- @method OpxElevators.Access.Evaluate
 --- @description Decides whether a character snapshot may select a floor.
---- @param floor {FloorSpec|nil}
+--- @param floor {FloorSpec}
 --- @param snapshot {JobSnapshot|nil}
 --- @param nowMs {integer}
 --- @returns {boolean, string|nil}
 function OpxElevators.Access.Evaluate(floor, snapshot, nowMs)
-	if type(floor) ~= 'table' then return false, 'no_such_floor' end
 	local required = floor.JOBS
 	if type(required) ~= 'table' or next(required) == nil then return true, nil end
 
