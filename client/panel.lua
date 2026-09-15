@@ -8,7 +8,6 @@ local Config = OPX_ELEVATORS_CONFIG
 local Runtime = OpxElevators.Runtime
 
 OpxElevators.Panel = {}
-local Panel = OpxElevators.Panel
 
 --- @author DemiAutomatic
 --- @type {string}
@@ -67,15 +66,6 @@ local function available()
 end
 
 --- @author DemiAutomatic
---- @method menu
---- @description Calls one opx77_menu export.
---- @param name {string}
---- @returns {table|nil, string|nil}
-local function menu(name, ...)
-	return Runtime.Call(MENU, name, ...)
-end
-
---- @author DemiAutomatic
 --- @method OpxElevators.Panel.Open
 --- @description Opens an elevator's floor list through opx77_menu on a thread.
 --- @param key {string|nil}
@@ -106,7 +96,7 @@ function OpxElevators.Panel.Open(key)
 
 	openFor = listing.elevator
 	CreateThread(function()
-		local _, failure = menu('open', {
+		local _, failure = Runtime.Call(MENU, 'open', {
 			id = 'elevators.' .. listing.elevator,
 			title = elevator.LABEL or listing.elevator,
 			event = EVENT,
@@ -142,6 +132,6 @@ AddEventHandler(Config.EVENT, function(payload)
 	if not available() then return end
 	openFor = nil
 	CreateThread(function()
-		menu('setStatus', refusal(payload), false)
+		Runtime.Call(MENU, 'setStatus', refusal(payload), false)
 	end)
 end)

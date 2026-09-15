@@ -70,7 +70,6 @@ OpxElevators.Access.FiniteNumber = finiteNumber
 --- @type {integer}
 --- @description Box every accepted coordinate fits in, and the %d ceiling.
 local BOUND = 1000000
-OpxElevators.Access.BOUND = BOUND
 
 --- @author DemiAutomatic
 --- @method coordinate

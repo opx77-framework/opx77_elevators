@@ -102,16 +102,6 @@ function OpxElevators.State.Nearest(nowMs)
 end
 
 --- @author DemiAutomatic
---- @method OpxElevators.State.Rows
---- @description Builds the floor rows for this player at one elevator.
---- @param key {string}
---- @param nowMs {integer}
---- @returns {FloorRow[]}
-function OpxElevators.State.Rows(key, nowMs)
-	return Access.List(key, State.snapshot, nowMs)
-end
-
---- @author DemiAutomatic
 --- @method OpxElevators.State.Report
 --- @description Summarises what this client knows, for the state export.
 --- @param nowMs {integer}

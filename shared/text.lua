@@ -5,15 +5,14 @@
 OpxElevators = OpxElevators or {}
 
 OpxElevators.Text = {}
-local Text = OpxElevators.Text
 
 --- @author DemiAutomatic
---- @method OpxElevators.Text.Span
+--- @method span
 --- @description Byte length of the first maximum characters of a text.
 --- @param text {string}
 --- @param maximum {integer}
 --- @returns {integer}
-function OpxElevators.Text.Span(text, maximum)
+local function span(text, maximum)
 	local size = #text
 	local ceiling = maximum * 4
 	if size > ceiling then size = ceiling end
@@ -42,7 +41,7 @@ function OpxElevators.Text.Clean(value, maximum, ellipsis)
 	if type(value) ~= 'string' then return nil end
 	value = value:gsub('[%c]', ' ')
 	if #value <= maximum then return value end
-	local cut = Text.Span(value, maximum)
+	local cut = span(value, maximum)
 	if cut >= #value then return value end
 	return value:sub(1, cut) .. (ellipsis or '')
 end

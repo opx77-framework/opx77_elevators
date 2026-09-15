@@ -12,10 +12,6 @@ OpxElevators.Access = {}
 ---@type table<ElevatorKey, ElevatorSpec>
 OpxElevators.Access.ELEVATORS = {}
 
---- The box every accepted coordinate must fit inside, and the ceiling on any `%d` argument.
----@type integer
-OpxElevators.Access.BOUND = 1000000
-
 --- `MATCH_RADIUS`, squared once at load; an invalid value reads as zero.
 ---@type number
 OpxElevators.Access.MATCH_RADIUS_SQ = 0
@@ -40,11 +36,11 @@ OpxElevators.Access.JOB_MAX_AGE_MS = 0
 ---@type fun(value: any): number|nil
 OpxElevators.Access.FiniteNumber = nil
 
---- A world coordinate: finite, and inside `BOUND`.
+--- A world coordinate: finite, and inside ±1,000,000, which is also the ceiling on any `%d`.
 ---@type fun(value: any): number|nil
 OpxElevators.Access.Coordinate = nil
 
---- A whole number inside `BOUND`, safe to hand to `%d`.
+--- A whole number inside the coordinate box, safe to hand to `%d`.
 ---@type fun(value: any): integer|nil
 OpxElevators.Access.Integer = nil
 

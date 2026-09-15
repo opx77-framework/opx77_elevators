@@ -74,15 +74,13 @@ end
 --- @author DemiAutomatic
 --- @method pull
 --- @description Re-reads the character from opx77_core, on a coroutine.
---- @returns {boolean, string|nil}
 local function pull()
-	local result, reason, answered = Runtime.Call(CORE, 'GetPlayerData')
+	local result, _, answered = Runtime.Call(CORE, 'GetPlayerData')
 	if result == nil then
 		if answered then State.Forget() end
-		return false, reason
+		return
 	end
 	State.Adopt(result.data, nowMs())
-	return true
 end
 
 --- @author DemiAutomatic
@@ -227,7 +225,7 @@ function OpxElevators.Runtime.Floors(key)
 	key = key or Runtime.Nearest()
 	if key == nil then return { ok = false, error = 'no_elevator_nearby' } end
 	if Access.Elevator(key) == nil then return { ok = false, error = 'no_such_elevator' } end
-	return { ok = true, elevator = key, floors = State.Rows(key, nowMs()) }
+	return { ok = true, elevator = key, floors = Access.List(key, State.snapshot, nowMs()) }
 end
 
 --- @author DemiAutomatic

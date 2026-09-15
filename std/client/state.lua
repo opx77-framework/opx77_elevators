@@ -38,12 +38,6 @@ function OpxElevators.State.Sighted(key, lift, nowMs, playerX, playerY) end
 ---@return ElevatorKey|nil
 function OpxElevators.State.Nearest(nowMs) end
 
---- The floor rows for this player at one elevator.
----@param key ElevatorKey
----@param nowMs integer
----@return FloorRow[]
-function OpxElevators.State.Rows(key, nowMs) end
-
 --- What the `state` export publishes, without `ok`.
 ---@param nowMs integer
 ---@return ElevatorClientState
