@@ -9,9 +9,8 @@
 > **Do not rely on the current API for production resources yet.**
 
 > [!IMPORTANT]
-> **The job check is a client-side hint: the Open77 server runtime has no cross-resource event
-> bus, so this resource's server half cannot ask `opx77_core` for a job and cannot re-derive
-> the check.**
+> **The job check is a client-side hint: this resource's server half does not re-derive it,
+> because `opx77_core` has no server export that answers a player's job yet.**
 >
 > It re-derives everything else — the elevator, the floor, the player's position and routing
 > bucket, the rate. Gate flavour on the job, never money or a body count; an unforgeable
@@ -68,7 +67,7 @@ sent only to a player the ACL grants `command.<name>`; that read is why the mani
 
 `config.lua`. Each elevator by a durable key: where the shaft is, how many floors the native
 device has, and the stops this resource offers with their job requirements. Job names must exist
-in `opx77_core/data/jobs.lua`; this resource cannot check them.
+in `opx77_core/data/jobs.lua`; this resource does not check them.
 
 | Key | Default | Meaning |
 |---|---|---|

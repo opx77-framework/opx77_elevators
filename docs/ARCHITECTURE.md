@@ -58,12 +58,17 @@ troisième, le refus d'un étage choisi dans le panneau devient une ligne de cha
 
 ## Le métier est un indice côté client
 
-Le runtime serveur d'Open77 n'a pas de bus d'événements inter-resources : la moitié serveur ne
-peut pas demander un métier à `opx77_core` et ne peut donc pas refaire la vérification. Elle
-refait tout le reste — l'ascenseur, l'étage, la position et le bucket du joueur, la cadence — et
-`request` (dans `server/main.lua`) ne contient aucune clause de métier. Les codes de métier
-(`no_character`, `job_stale`, `job_required`, `grade_too_low`, `off_duty`) sont décidés sur le
-client et restent des indices.
+La moitié serveur ne refait pas la vérification du métier. Ce n'est pas une limite de la
+plateforme : une moitié serveur peut appeler les exports serveur d'une autre resource par
+`Open77.exports.call` (c'est ainsi qu'`opx77_inventory` lit `GetIdentity` et les exports
+d'inventaire d'`opx77_core`). C'est qu'`opx77_core` ne publie aujourd'hui aucune export serveur
+qui donne le métier d'un joueur : `GetIdentity` répond l'identité, la connexion et le chargement,
+jamais `job` ni `jobs`. Vérifier le métier côté serveur demande d'abord d'étendre cette export dans
+`opx77_core`, puis de la lire dans `request` ; ce n'est pas fait. La moitié serveur refait tout le
+reste — l'ascenseur, l'étage, la position et le bucket du joueur, la cadence — et `request` (dans
+`server/main.lua`) ne contient aucune clause de métier. Les codes de métier (`no_character`,
+`job_stale`, `job_required`, `grade_too_low`, `off_duty`) sont décidés sur le client et restent
+des indices.
 
 - **L'instantané** (`OpxElevators.State.snapshot`) ne garde que `job` et `jobs` du `PlayerData`,
   horodatés. Il est renouvelé à chaque `opx77:client:onPlayerLoaded` et
@@ -252,8 +257,8 @@ connues »).
 ## Configuration et diagnostic
 
 `OpxElevators.Access.Problems` liste tout ce qui ne va pas dans la configuration sans avoir besoin
-du monde, trié. Elle ne peut pas vérifier un **nom** de métier : ils vivent dans `opx77_core`, que
-cette VM ne peut pas interroger. Les axes sont vérifiés en premier, car chaque distance et chaque
+du monde, trié. Elle ne vérifie pas un **nom** de métier : ils vivent dans `opx77_core`, et
+`Problems` tourne au chargement, sans rien attendre d'une autre resource. Les axes sont vérifiés en premier, car chaque distance et chaque
 `%.2f` lève sur une chaîne ; `FLOOR_COUNT` a son propre test, car `%d` lève sur un nombre sans forme
 entière (`Integer`, dans `BOUND`) ; un trou dans `FLOORS` arrive là comme `nil` et est contrôlé
 avant toute lecture ; un `INDEX` invalide est oublié aussitôt, car `seen[nil]` lèverait sur la
@@ -318,6 +323,10 @@ minuscules : les fichiers de traduction des opérateurs l'appellent.
   `elevators.refused`.
 
 ## Limites connues
+
+- **Le métier n'est vérifié que sur le client** : un client modifié peut demander un étage gardé
+  et le serveur le fera bouger s'il est à portée ; voir « Le métier est un indice côté client »
+  pour ce qu'il faudrait côté `opx77_core`.
 
 - **L'horloge client peut se figer** : `GetGameTimer` n'existe que côté serveur et le client n'a
   aucune autre horloge monotone, donc si `Open77.time.monotonic` cesse de répondre sur un client,
