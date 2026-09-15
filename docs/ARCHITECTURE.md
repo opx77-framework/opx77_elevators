@@ -289,8 +289,6 @@ minuscules : les fichiers de traduction des opérateurs l'appellent.
 
 ## Limites connues
 
-- **Le rappel journalise le succès du `pcall`, pas la réponse de `goTo`** : `Forget` écrit
-  `recalled to floor 0 (true)` même quand l'hôte a refusé le déplacement.
 - **`suggestWindows` n'est pas ramassé par le balayage** : un `chat:ready` arrivé après le départ
   d'un joueur recrée une fenêtre que plus rien n'efface, le défaut que le balayage corrige pour les
   trois autres tables.
@@ -299,6 +297,5 @@ minuscules : les fichiers de traduction des opérateurs l'appellent.
 - **`POLL_MS`, `SCAN_MS`, `TRAVEL_MS`, `REQUEST_WINDOW_MS` et `REQUESTS_PER_WINDOW` sont lus bruts**
   alors que le README dit qu'une valeur invalide est lue comme zéro : une chaîne y lève (à chaque
   scan côté client, dans le gestionnaire de demande côté serveur).
-- **Une levée de `goTo` dans `Request`** sort du gestionnaire réseau sans réponse au client.
 - **`openFor` n'est pas effacé par une réponse acceptée** : un refus ultérieur venu d'un autre
   appelant peut encore s'afficher sous un panneau déjà fermé.

@@ -131,6 +131,17 @@ local function applyLock(id)
 end
 
 --- @author DemiAutomatic
+--- @method moveCabin
+--- @description Sends a cabin to a floor, answering whether the host accepted.
+--- @param id {integer}
+--- @param index {integer}
+--- @returns {boolean}
+local function moveCabin(id, index)
+	local called, moved = pcall(Open77.elevators.goTo, id, index, { travelMs = Config.TRAVEL_MS })
+	return called and moved ~= nil and moved ~= false
+end
+
+--- @author DemiAutomatic
 --- @method atElevator
 --- @description Whether a host-reported lift stands at a configured elevator.
 --- @param key {string}
@@ -332,8 +343,7 @@ function OpxElevators.Server.Request(player, key, index)
 		return { ok = false, error = 'too_far' }
 	end
 
-	local moved = Open77.elevators.goTo(record.id, index, { travelMs = Config.TRAVEL_MS })
-	if not moved then return { ok = false, error = 'move_rejected' } end
+	if not moveCabin(record.id, index) then return { ok = false, error = 'move_rejected' } end
 	record.usedAtMs = nowMs()
 	record.rider = player
 	record.rideEndsAtMs = record.usedAtMs + (tonumber(Config.TRAVEL_MS) or 0)
@@ -394,8 +404,7 @@ function OpxElevators.Server.Forget(playerId, reason)
 			record.rider = nil
 			if (record.rideEndsAtMs or 0) > at then
 				record.rideEndsAtMs = nil
-				local sent = pcall(Open77.elevators.goTo, record.id, 0,
-					{ travelMs = Config.TRAVEL_MS })
+				local sent = moveCabin(record.id, 0)
 				Open77.log.info(('%s: rider %d left mid-travel (%s); recalled to floor 0 (%s)')
 					:format(key, player, tostring(reason), tostring(sent)))
 			end
