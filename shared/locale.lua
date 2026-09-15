@@ -62,24 +62,6 @@ function OpxElevators.Locale.Set(code)
 end
 
 --- @author DemiAutomatic
---- @method OpxElevators.Locale.Current
---- @description Answers the language code currently selected.
---- @returns {string}
-function OpxElevators.Locale.Current()
-	return active
-end
-
---- @author DemiAutomatic
---- @method OpxElevators.Locale.Exists
---- @description Whether the active or fallback catalogue defines a key.
---- @param key {string}
---- @returns {boolean}
-function OpxElevators.Locale.Exists(key)
-	return (catalogs[active] and catalogs[active][key] ~= nil)
-		or (catalogs[FALLBACK] and catalogs[FALLBACK][key] ~= nil)
-end
-
---- @author DemiAutomatic
 --- @method OpxElevators.Locale.Get
 --- @description Resolves a key through the active catalogue, the fallback, then itself.
 --- @param key {string}

@@ -14,15 +14,6 @@ function OpxElevators.Locale.register(code, strings) end
 ---@return boolean applied
 function OpxElevators.Locale.Set(code) end
 
---- The language code currently selected.
----@return string
-function OpxElevators.Locale.Current() end
-
---- Whether the active catalogue, or en, defines a key.
----@param key string
----@return boolean
-function OpxElevators.Locale.Exists(key) end
-
 --- Resolves a key through the active catalogue, then en, then the key itself. Never nil.
 --- A placeholder without a value in `params` is left as written.
 ---@param key string
