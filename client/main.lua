@@ -308,6 +308,10 @@ AddEventHandler('onClientResourceStart', function(name)
 		Open77.log.error('native elevator API unavailable; nothing will be scanned')
 		return
 	end
+	if Access.SCAN_MS <= 0 then
+		Open77.log.error('SCAN_MS is not a whole number of milliseconds above zero; nothing will be scanned')
+		return
+	end
 
 	running = true
 	CreateThread(function()
@@ -324,7 +328,7 @@ AddEventHandler('onClientResourceStart', function(name)
 			if not ticked then
 				Open77.log.warn('the elevator scan failed: ' .. tostring(failure))
 			end
-			Wait(Config.SCAN_MS)
+			Wait(Access.SCAN_MS)
 		end
 	end)
 end)

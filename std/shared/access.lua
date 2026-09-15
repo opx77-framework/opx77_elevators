@@ -32,6 +32,11 @@ OpxElevators.Access.SCAN_RADIUS_SQ = 0
 ---@type number
 OpxElevators.Access.JOB_MAX_AGE_MS = 0
 
+--- `SCAN_MS`, read once at load and floored to whole milliseconds; an invalid value reads as
+--- zero, and the client then refuses to start its scan loop.
+---@type integer
+OpxElevators.Access.SCAN_MS = 0
+
 --- Coerces to a number, rejecting NaN and both infinities. Carries no range of its own.
 ---@type fun(value: any): number|nil
 OpxElevators.Access.FiniteNumber = nil

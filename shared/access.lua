@@ -139,6 +139,11 @@ local JOB_MAX_AGE_MS = finiteNumber(Config.JOB_MAX_AGE_MS) or 0
 OpxElevators.Access.JOB_MAX_AGE_MS = JOB_MAX_AGE_MS
 
 --- @author DemiAutomatic
+--- @type {integer}
+--- @description SCAN_MS read once in whole milliseconds; an invalid value reads as zero.
+OpxElevators.Access.SCAN_MS = math.floor(finiteNumber(Config.SCAN_MS) or 0)
+
+--- @author DemiAutomatic
 --- @method OpxElevators.Access.FlatDistanceSquared
 --- @description Squared horizontal distance to an elevator's declared position.
 --- @param key {string}

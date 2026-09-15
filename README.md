@@ -114,9 +114,10 @@ to it as one in the lobby. A client that cannot read its own position falls back
 on. The server's answer is the one that counts.
 
 Every radius and every timer in `config.lua` is checked at boot; one that is missing or is not
-a positive number is named in a warning and read as zero, rather than raising mid-request. The
-one exception is `SCAN_MS` as the client's loop interval: an invalid value stops the scan instead
-of running it every frame, so no panel opens until the value is fixed.
+a positive number is named in a warning and read as zero, rather than raising mid-request.
+`SCAN_MS` is read as whole milliseconds (`"2000"` and `2000.5` both scan every 2000 ms); one
+that comes out below 1 is logged as an error on the client, which then runs no scan loop at
+all, so no panel opens and the character is not polled until the value is fixed.
 
 Every adopted lift is locked with the host's own flag, so the elevator authority refuses a
 request sent straight off a client and this resource is the only way the cabin moves.

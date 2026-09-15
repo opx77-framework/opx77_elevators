@@ -4,13 +4,12 @@
 
 OpxElevators = OpxElevators or {}
 
-local Config = OPX_ELEVATORS_CONFIG
 local Access = OpxElevators.Access
 
 --- @author DemiAutomatic
---- @type {number}
---- @description How long a sighting is believed: two scans, read once.
-local STALE_MS = (Access.FiniteNumber(Config.SCAN_MS) or 0) * 2
+--- @type {integer}
+--- @description How long a sighting is believed: two scans.
+local STALE_MS = Access.SCAN_MS * 2
 
 OpxElevators.State = {}
 local State = OpxElevators.State

@@ -100,7 +100,7 @@ qui compte, jamais celle de la cabine.
 - `POSITIONS` et `ENTITY_HASHES` sont construits une fois au chargement : `Locate` parcourt chaque
   ascenseur pour chaque ascenseur natif de chaque scan, et une coordonnée convertie là le serait à
   chaque fois.
-- Les trois rayons et `JOB_MAX_AGE_MS` (dans `shared/access.lua`), `TRAVEL_MS`,
+- Les trois rayons, `JOB_MAX_AGE_MS` et `SCAN_MS` (dans `shared/access.lua`), `TRAVEL_MS`,
   `REQUEST_WINDOW_MS` et `REQUESTS_PER_WINDOW` (dans `server/main.lua`) et `POLL_MS` (dans
   `client/main.lua`) sont lus une fois au chargement, et une valeur que `Problems` refuse vaut
   zéro : une mauvaise valeur devient un avertissement au démarrage plutôt qu'une levée dans un
@@ -128,7 +128,11 @@ topologie arrive de façon asynchrone : un ascenseur dont l'inspection n'a pas r
 (`floorCount` ou `activeFloor` absents) attend le scan suivant. L'`id` d'une entrée de `nearby`
 est celui du serveur et n'existe qu'une fois l'ascenseur géré. `Open77.elevators` manque sur un
 client sans monde chargé ou sur une version du jeu antérieure à l'API des ascenseurs : le client
-le journalise une fois et ne scanne pas. La boucle de scan tourne sous `pcall`, car une levée d'un
+le journalise une fois et ne scanne pas. `Wait` reçoit `Access.SCAN_MS`, jamais la valeur brute
+de `config.lua` : l'hôte lève sur une chaîne ou un négatif, ce qui tuait le thread au premier tour,
+et zéro faisait scanner à chaque image. Une valeur qui tombe sous une milliseconde entière est
+une erreur journalisée au démarrage, et la boucle ne part pas du tout (ni scan, ni relecture du
+cœur) plutôt que de tourner à vide. La boucle de scan tourne sous `pcall`, car une levée d'un
 appel hôte dans un `CreateThread` nu terminerait le scan pour toute la session.
 
 Le serveur choisit lui-même l'ascenseur, le bucket et le nombre d'étages (`opx77_elevators:sighted`) :
@@ -315,7 +319,3 @@ minuscules : les fichiers de traduction des opérateurs l'appellent.
   `GetGameTimer` que côté serveur, donc si `Open77.time.monotonic` cesse de répondre sur un client,
   `NowMs` y garde sa dernière lecture ; le client ne relit plus le cœur et ne fait plus vieillir ni
   l'instantané ni les signalements.
-- **`SCAN_MS` reste passé brut à `Wait`** : une valeur invalide arrête la boucle de scan du client
-  au lieu de la faire tourner à chaque image, ce qui est la panne la moins coûteuse ; `STALE_MS` la
-  lit comme zéro et le panneau ne s'ouvre alors jamais, symptôme que `Problems` explique au
-  démarrage.
