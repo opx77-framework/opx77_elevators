@@ -14,6 +14,7 @@ OpxElevators.Locale.register('fr', {
 	['elevators.floorOutOfRange'] = 'Cet étage est hors de cet ascenseur.',
 	['elevators.moveRejected'] = "La cabine n'a pas voulu bouger.",
 	['elevators.notSent'] = "Cette demande n'a pas pu être envoyée.",
+	['elevators.rateLimited'] = 'Ralentissez et réessayez dans un instant.',
 
 	['elevators.noCharacter'] = "Votre fiche n'a pas pu être lue.",
 	['elevators.jobStale'] = "Votre fiche n'est plus à jour. Réessayez dans un instant.",

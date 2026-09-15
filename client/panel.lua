@@ -11,8 +11,18 @@ OpxElevators.Panel = {}
 
 --- @author DemiAutomatic
 --- @type {string}
+--- @description This resource's name, the owner opx77_menu stamps on rows.
+local RESOURCE = GetCurrentResourceName()
+
+--- @author DemiAutomatic
+--- @type {string}
 --- @description The resource that draws the floor list.
 local MENU = 'opx77_menu'
+
+--- @author DemiAutomatic
+--- @type {string}
+--- @description The resource that shows a refusal as a toast.
+local NOTIFY = 'opx77_notify'
 
 --- @author DemiAutomatic
 --- @type {string}
@@ -21,8 +31,13 @@ local EVENT = 'opx77_elevators:floor'
 
 --- @author DemiAutomatic
 --- @type {string|nil}
---- @description Elevator whose panel this file last opened, until answered.
+--- @description Elevator whose panel this file last opened, until answered or closed.
 local openFor = nil
+
+--- @author DemiAutomatic
+--- @type {boolean}
+--- @description Whether a toast failure has already been logged.
+local notifyReported = false
 
 --- @author DemiAutomatic
 --- @type {table<string, string>}
@@ -35,6 +50,7 @@ local REFUSAL = {
 	floor_out_of_range = 'elevators.floorOutOfRange',
 	move_rejected = 'elevators.moveRejected',
 	not_sent = 'elevators.notSent',
+	rate_limited = 'elevators.rateLimited',
 	no_character = 'elevators.noCharacter',
 	job_stale = 'elevators.jobStale',
 	job_required = 'elevators.jobRequired',
@@ -54,6 +70,41 @@ local function refusal(payload)
 	local reason = payload.reason
 	if type(reason) == 'string' and reason ~= '' then return reason end
 	return locale(REFUSAL[payload.error] or 'elevators.refused')
+end
+
+--- @author DemiAutomatic
+--- @method chatLine
+--- @description Writes a refusal as a chat line when no toast is possible.
+--- @param message {string}
+local function chatLine(message)
+	TriggerEvent('chat:addMessage', {
+		type = 'error',
+		author = locale('elevators.title'),
+		text = message,
+	})
+end
+
+--- @author DemiAutomatic
+--- @method toast
+--- @description Shows a refusal through opx77_notify, or as a chat line otherwise.
+--- @param message {string}
+local function toast(message)
+	CreateThread(function()
+		local _, failure = Runtime.Call(NOTIFY, 'show', {
+			id = 'opx77_elevators.answer',
+			replace = true,
+			type = 'error',
+			title = locale('elevators.title'),
+			message = message,
+			durationMs = 5000,
+		})
+		if failure == nil then return end
+		if not notifyReported then
+			notifyReported = true
+			Open77.log.warn(('no toast (%s): refusals go to the chat box instead'):format(failure))
+		end
+		chatLine(message)
+	end)
 end
 
 --- @author DemiAutomatic
@@ -113,10 +164,18 @@ end
 
 --- @author DemiAutomatic
 --- @event opx77_elevators:floor
---- @description Requests the floor of a row selected in the panel.
+--- @description Requests a selected floor, or forgets a panel the player closed.
 --- @param payload {table}
 AddEventHandler(EVENT, function(payload)
-	if type(payload) ~= 'table' or payload.action ~= 'select' then return end
+	if type(payload) ~= 'table' or payload.owner ~= RESOURCE then return end
+	if payload.action == 'close' then
+		if openFor ~= nil and payload.menu == 'elevators.' .. openFor and
+			payload.reason ~= 'select' and payload.reason ~= 'reopened' then
+			openFor = nil
+		end
+		return
+	end
+	if payload.action ~= 'select' then return end
 	local data = payload.data
 	if type(data) ~= 'table' then return end
 	Runtime.Use(data.elevator, data.floor, 'panel')
@@ -124,14 +183,11 @@ end)
 
 --- @author DemiAutomatic
 --- @event opx77:elevators
---- @description Shows a refusal under the panel this file opened, once.
+--- @description Toasts the first refusal for the panel this file opened.
 --- @param payload {table}
 AddEventHandler(Config.EVENT, function(payload)
-	if type(payload) ~= 'table' or payload.ok == true then return end
-	if openFor == nil then return end
-	if not available() then return end
+	if type(payload) ~= 'table' or openFor == nil or payload.elevator ~= openFor then return end
 	openFor = nil
-	CreateThread(function()
-		Runtime.Call(MENU, 'setStatus', refusal(payload), false)
-	end)
+	if payload.ok == true then return end
+	toast(refusal(payload))
 end)

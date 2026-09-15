@@ -329,10 +329,8 @@ RegisterNetEvent('opx77_elevators:request', function(key, index)
 	local player = tonumber(source) or 0
 	if player <= 0 then return end
 	local result = request(player, key, index)
-	if result.error ~= 'rate_limited' then
-		TriggerClientEvent('opx77_elevators:answer', player, safe(key), integer(index),
-			result.ok, result.error)
-	end
+	TriggerClientEvent('opx77_elevators:answer', player, safe(key), integer(index),
+		result.ok, result.error)
 	if not result.ok and within(logWindows, player, 1, 1000) then
 		Open77.log.info(('player %d refused %s floor %s: %s'):format(player, safe(key), safe(index),
 			tostring(result.error)))

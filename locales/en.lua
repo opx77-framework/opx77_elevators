@@ -14,6 +14,7 @@ OpxElevators.Locale.register('en', {
 	['elevators.floorOutOfRange'] = 'That floor is outside this elevator.',
 	['elevators.moveRejected'] = 'The cabin would not move.',
 	['elevators.notSent'] = 'That request could not be sent.',
+	['elevators.rateLimited'] = 'Slow down and try again in a moment.',
 
 	['elevators.noCharacter'] = 'Your record could not be read.',
 	['elevators.jobStale'] = 'Your record is out of date. Try again in a moment.',

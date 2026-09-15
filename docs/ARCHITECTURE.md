@@ -32,9 +32,10 @@ ascenseur dès le prochain signalement d'un client (voir « Adopter sur signalem
 - `acl.read` — côté serveur, `Open77.acl.isAllowed`, pour ne suggérer la commande de diagnostic
   qu'à un joueur que l'ACL laisserait l'exécuter. Lecture seule.
 
-Aucune `dependency` n'est déclarée : `opx77_core` et `opx77_menu` sont optionnels. Sans le
-premier, les étages publics restent ouverts et les étages gardés se ferment ; sans le second,
-`openPanel` répond `menu_not_running` et le reste fonctionne.
+Aucune `dependency` n'est déclarée : `opx77_core`, `opx77_menu` et `opx77_notify` sont
+optionnels. Sans le premier, les étages publics restent ouverts et les étages gardés se ferment ;
+sans le deuxième, `openPanel` répond `menu_not_running` et le reste fonctionne ; sans le
+troisième, le refus d'un étage choisi dans le panneau devient une ligne de chat.
 
 ## Contrats
 
@@ -191,9 +192,10 @@ et répond si l'hôte a accepté. Une levée devient `move_rejected`, comme un r
 du gestionnaire réseau sans réponse, et la ligne du rappel dit ce que l'hôte a répondu.
 
 - `within` s'arrête **à** la limite plutôt que de compter pendant toute la fenêtre.
-- La limite gouverne la cabine, pas la réponse : `answer` n'est retenu que quand la limite est la
-  raison du refus. Un refus est journalisé au plus une fois par seconde par joueur, car le chemin du
-  refus est le moins coûteux pour un attaquant.
+- La limite gouverne la cabine, pas la réponse : une demande au-delà de la limite reçoit quand
+  même `answer` avec `rate_limited`, un événement pour un événement, pour que le joueur voie
+  pourquoi rien ne bouge. Un refus est journalisé au plus une fois par seconde par joueur, car le
+  chemin du refus est le moins coûteux pour un attaquant.
 - Toute valeur venue du fil passe par `safe` (`OpxElevators.Text.Clean`, 64 caractères, caractères
   de contrôle remplacés) avant une chaîne de format : un saut de ligne y forgerait une ligne de
   journal entière. `span`, dans `shared/text.lua`, mesure en caractères UTF-8 et borne son
@@ -268,15 +270,24 @@ journal. Un étage refusé porte sa raison comme valeur de ligne — une ligne g
 lit comme cassée — : le `REASON` de l'opérateur s'il existe, sinon `elevators.locked`. Les
 `LABEL` et `REASON` de `config.lua` sont les mots de l'opérateur et ne sont jamais traduits.
 
-La sélection d'une ligne rend la table `data` posée sur l'élément, telle quelle. Un refus est
-affiché sous la liste (`setStatus`), au mieux : la liste s'est déjà fermée à la sélection. Il ne l'est
-que pour un panneau ouvert par ce fichier (`openFor`), et une seule fois, car n'importe quelle
-resource peut lever le nom de l'événement ; c'est la réponse qui efface `openFor`, pas la sélection.
+La sélection d'une ligne rend la table `data` posée sur l'élément, telle quelle. Une ligne n'est
+crue que si `opx77_menu` l'a estampillée au nom de cette resource (`owner`), car n'importe quelle
+resource peut lever le nom de l'événement.
+
+Un refus est montré en toast `opx77_notify` (`id = 'opx77_elevators.answer'`, `replace`, titre
+`elevators.title`), et en ligne de chat quand le toast échoue, avec un avertissement unique. Il
+ne peut pas l'être sous la liste : le panneau s'ouvre avec `closeOnSelect`, et `opx77_menu` ferme
+la liste juste après avoir levé la sélection, donc un `setStatus` répondrait `no_menu_open`. Seule
+la première réponse qui porte l'ascenseur du panneau ouvert par ce fichier (`openFor`) est montrée ;
+toute réponse pour cet ascenseur, acceptée ou refusée, efface `openFor`, comme une fermeture qui
+n'est pas la sélection (Échap, pause, un autre menu). Une fermeture `select` laisse `openFor` en
+place, puisque la réponse du serveur arrive ensuite, et `reopened` aussi, puisque c'est ce panneau
+qui se rouvre.
 
 ## Invariants de la plateforme
 
-- **Une resource ne touche pas aux entrailles d'une autre** : `opx77_core` et `opx77_menu` ne sont
-  joints que par leurs exports, et leur absence est une dégradation.
+- **Une resource ne touche pas aux entrailles d'une autre** : `opx77_core`, `opx77_menu` et
+  `opx77_notify` ne sont joints que par leurs exports, et leur absence est une dégradation.
 - **Un pouvoir de staff exige une autorisation ACL côté serveur** : la commande de diagnostic est
   restreinte et résolue par l'hôte ; la suggestion n'est qu'un affichage.
 - **L'identité d'une entité vit dans un registre serveur** : un ascenseur est désigné par sa clé de
@@ -308,5 +319,3 @@ minuscules : les fichiers de traduction des opérateurs l'appellent.
   au lieu de la faire tourner à chaque image, ce qui est la panne la moins coûteuse ; `STALE_MS` la
   lit comme zéro et le panneau ne s'ouvre alors jamais, symptôme que `Problems` explique au
   démarrage.
-- **`openFor` n'est pas effacé par une réponse acceptée** : un refus ultérieur venu d'un autre
-  appelant peut encore s'afficher sous un panneau déjà fermé.

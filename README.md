@@ -30,6 +30,7 @@ grades and the wording all live in `config.lua`.
 - One panel for the whole shaft: an elevator is callable from every one of its own floors
 - Native lifts adopted on sight and locked, so the cabin answers this resource alone
 - The panel is `opx77_menu`'s, and optional — a missing menu costs one log line
+- A floor refused after a pick is said in an `opx77_notify` toast, or a chat line without one
 
 ## Exports
 
