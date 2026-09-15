@@ -3,31 +3,31 @@
 OpxElevators = OpxElevators or {}
 
 local Config = OPX_ELEVATORS_CONFIG
-local Access = OpxElevators.access
+local Access = OpxElevators.Access
 
 --- A sighting is believed for two scans, so one missed pass does not blink a panel shut.
 --- Read once: every export below reaches it, and an export answers rather than raising.
-local STALE_MS = (Access.finiteNumber(Config.SCAN_MS) or 0) * 2
+local STALE_MS = (Access.FiniteNumber(Config.SCAN_MS) or 0) * 2
 
-local State = {}
-OpxElevators.state = State
+OpxElevators.State = {}
+local State = OpxElevators.State
 
 --- `{ job = PlayerJob|nil, jobs = table|nil, atMs = integer }`, or nil when the core has
 --- never answered.
 ---@type table|nil
-State.snapshot = nil
+OpxElevators.State.snapshot = nil
 
 --- key -> { id, floorCount, atMs }. Filled by the server's `bound` event.
-State.bound = {}
+OpxElevators.State.bound = {}
 
 --- key -> what one scan saw of a lift. `reach`, `distance`, `id`, `managed` and `atMs`
 --- are read.
-State.seen = {}
+OpxElevators.State.seen = {}
 
 --- Adopt a PlayerData snapshot from opx77_core; only the job travels.
 ---@param playerData table|nil
 ---@param nowMs integer
-function State.adopt(playerData, nowMs)
+function OpxElevators.State.Adopt(playerData, nowMs)
 	if type(playerData) ~= 'table' then return end
 	State.snapshot = {
 		job = type(playerData.job) == 'table' and playerData.job or nil,
@@ -37,7 +37,7 @@ function State.adopt(playerData, nowMs)
 end
 
 --- The core said there is no character; different from a call that never landed.
-function State.forget()
+function OpxElevators.State.Forget()
 	State.snapshot = nil
 end
 
@@ -48,11 +48,11 @@ end
 ---@param nowMs integer
 ---@param playerX number|nil
 ---@param playerY number|nil
-function State.sighted(key, lift, nowMs, playerX, playerY)
+function OpxElevators.State.Sighted(key, lift, nowMs, playerX, playerY)
 	local position = lift.position or {}
 	local flat = nil
 	if type(playerX) == 'number' and type(playerY) == 'number' then
-		flat = Access.flatDistanceSquared(key, playerX, playerY)
+		flat = Access.FlatDistanceSquared(key, playerX, playerY)
 	end
 	State.seen[key] = {
 		-- across the ground, to the DECLARED position, which is what the server measures too
@@ -84,7 +84,7 @@ end
 --- Ranked across the ground, so every floor of a shaft is in reach of its own panel.
 ---@param nowMs integer
 ---@return string|nil key
-function State.nearest(nowMs)
+function OpxElevators.State.Nearest(nowMs)
 	local bestKey, bestDistance
 	for key, lift in pairs(State.seen) do
 		-- the fallback measures a different thing, to the cabin and in three dimensions
@@ -103,14 +103,14 @@ end
 ---@param key string
 ---@param nowMs integer
 ---@return table rows
-function State.rows(key, nowMs)
-	return Access.list(key, State.snapshot, nowMs)
+function OpxElevators.State.Rows(key, nowMs)
+	return Access.List(key, State.snapshot, nowMs)
 end
 
 --- What `state` publishes: enough to debug a panel that will not open.
 ---@param nowMs integer
 ---@return table
-function State.report(nowMs)
+function OpxElevators.State.Report(nowMs)
 	local seen, bound = 0, 0
 	-- only the current ones: State.seen keeps a lift the player walked away from
 	for _, lift in pairs(State.seen) do
@@ -128,6 +128,6 @@ function State.report(nowMs)
 		ageMs = snapshot and (nowMs - snapshot.atMs) or nil,
 		seen = seen,
 		bound = bound,
-		nearest = State.nearest(nowMs),
+		nearest = State.Nearest(nowMs),
 	}
 end

@@ -3,10 +3,10 @@
 OpxElevators = OpxElevators or {}
 
 local Config = OPX_ELEVATORS_CONFIG
-local Runtime = OpxElevators.runtime
+local Runtime = OpxElevators.Runtime
 
-local Panel = {}
-OpxElevators.panel = Panel
+OpxElevators.Panel = {}
+local Panel = OpxElevators.Panel
 
 local MENU = 'opx77_menu'
 local EVENT = 'opx77_elevators:floor'
@@ -54,19 +54,19 @@ end
 ---@param name string
 ---@return table|nil, string|nil
 local function menu(name, ...)
-	return Runtime.call(MENU, name, ...)
+	return Runtime.Call(MENU, name, ...)
 end
 
 --- Open the floor list for one elevator. `ok = true` means asked: the menu opens on a thread.
 ---@param key string|nil  defaults to the elevator the player is standing at
 ---@return table
-function Panel.open(key)
+function OpxElevators.Panel.Open(key)
 	local ready, why = available()
 	if not ready then return { ok = false, error = why } end
 
-	local listing = Runtime.floors(key)
+	local listing = Runtime.Floors(key)
 	if not listing.ok then return listing end
-	local elevator = OpxElevators.access.elevator(listing.elevator)
+	local elevator = OpxElevators.Access.Elevator(listing.elevator)
 	if #listing.floors == 0 then
 		-- every floor is gated and DENIED_FLOORS is "hidden"
 		return { ok = false, error = 'no_floors_available', elevator = listing.elevator }
@@ -109,7 +109,7 @@ AddEventHandler(EVENT, function(payload)
 	local data = payload.data
 	if type(data) ~= 'table' then return end
 	-- `openFor` is cleared by the answer below, not here
-	Runtime.use(data.elevator, data.floor, 'panel')
+	Runtime.Use(data.elevator, data.floor, 'panel')
 end)
 
 --- Put an outcome under the list. Best-effort: the list has already closed on select.

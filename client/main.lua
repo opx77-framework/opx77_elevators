@@ -3,11 +3,11 @@
 OpxElevators = OpxElevators or {}
 
 local Config = OPX_ELEVATORS_CONFIG
-local Access = OpxElevators.access
-local State = OpxElevators.state
+local Access = OpxElevators.Access
+local State = OpxElevators.State
 
-local Runtime = {}
-OpxElevators.runtime = Runtime
+OpxElevators.Runtime = {}
+local Runtime = OpxElevators.Runtime
 
 local RESOURCE = GetCurrentResourceName()
 local CORE = 'opx77_core'
@@ -46,7 +46,7 @@ end
 ---@param resource string
 ---@param name string
 ---@return table|nil, string|nil, boolean
-function Runtime.call(resource, name, ...)
+function OpxElevators.Runtime.Call(resource, name, ...)
 	local reachable, state = pcall(GetResourceState, resource)
 	if not reachable or state ~= 'running' then return nil, 'not_running', false end
 	if Open77.exports == nil then return nil, 'not_dispatched', false end
@@ -65,26 +65,26 @@ end
 --- Re-read the character. Coroutine only.
 ---@return boolean, string|nil
 local function pull()
-	local result, reason, answered = Runtime.call(CORE, 'GetPlayerData')
+	local result, reason, answered = Runtime.Call(CORE, 'GetPlayerData')
 	if result == nil then
 		-- answered and refused: no character, so the gate closes now rather than ageing out
-		if answered then State.forget() end
+		if answered then State.Forget() end
 		return false, reason
 	end
-	State.adopt(result.data, nowMs())
+	State.Adopt(result.data, nowMs())
 	return true
 end
 
 AddEventHandler('opx77:client:onPlayerLoaded', function(playerData)
-	State.adopt(playerData, nowMs())
+	State.Adopt(playerData, nowMs())
 end)
 
 AddEventHandler('opx77:client:playerDataChanged', function(playerData)
-	State.adopt(playerData, nowMs())
+	State.Adopt(playerData, nowMs())
 end)
 
 AddEventHandler('opx77:client:onPlayerUnloaded', function()
-	State.forget()
+	State.Forget()
 end)
 
 -- ---------------------------------------------------------------------------
@@ -117,9 +117,9 @@ local function scan()
 	for index = 1, #nearby do
 		local lift = nearby[index]
 		local position = lift.position or {}
-		local key = Access.locate(position.x, position.y, position.z, lift.engineEntity)
+		local key = Access.Locate(position.x, position.y, position.z, lift.engineEntity)
 		if key ~= nil then
-			State.sighted(key, lift, at, playerX, playerY)
+			State.Sighted(key, lift, at, playerX, playerY)
 			-- topology arrives asynchronously; a lift whose inspect has not answered waits a scan
 			local ready = lift.floorCount ~= nil and lift.floorCount > 0 and
 				lift.activeFloor ~= nil and lift.activeFloor >= 0
@@ -140,7 +140,7 @@ end
 --- The server has adopted one, and this is the id it got.
 --- Ids change on every restart, which is why an elevator's durable name is its config key.
 RegisterNetEvent('opx77_elevators:bound', function(key, id, floorCount)
-	if type(key) ~= 'string' or Access.elevator(key) == nil then return end
+	if type(key) ~= 'string' or Access.Elevator(key) == nil then return end
 	State.bound[key] = { id = id, floorCount = floorCount, atMs = nowMs() }
 	sighted[key] = nil
 end)
@@ -176,7 +176,7 @@ end)
 --- Our server half's binding wins over a scan: `nearby` also reports lifts others adopted.
 ---@param key string
 ---@return integer|nil
-function Runtime.elevatorId(key)
+function OpxElevators.Runtime.ElevatorId(key)
 	local bound = State.bound[key]
 	if bound ~= nil then return bound.id end
 	local seen = State.seen[key]
@@ -186,18 +186,18 @@ end
 
 --- Which elevator the player is standing at, or nil.
 ---@return string|nil
-function Runtime.nearest()
-	return State.nearest(nowMs())
+function OpxElevators.Runtime.Nearest()
+	return State.Nearest(nowMs())
 end
 
 --- The floor list to draw, for this player, at this elevator.
 ---@param key string|nil  defaults to the nearest
 ---@return table
-function Runtime.floors(key)
-	key = key or Runtime.nearest()
+function OpxElevators.Runtime.Floors(key)
+	key = key or Runtime.Nearest()
 	if key == nil then return { ok = false, error = 'no_elevator_nearby' } end
-	if Access.elevator(key) == nil then return { ok = false, error = 'no_such_elevator' } end
-	return { ok = true, elevator = key, floors = State.rows(key, nowMs()) }
+	if Access.Elevator(key) == nil then return { ok = false, error = 'no_such_elevator' } end
+	return { ok = true, elevator = key, floors = State.Rows(key, nowMs()) }
 end
 
 --- Select a floor. `ok = true` means asked: the server's verdict arrives on Config.EVENT.
@@ -205,16 +205,16 @@ end
 ---@param index integer
 ---@param origin string|nil  "panel", or the invoking resource's name, for the event
 ---@return table
-function Runtime.use(key, index, origin)
-	key = key or Runtime.nearest()
-	local result = Runtime.check(key, index)
+function OpxElevators.Runtime.Use(key, index, origin)
+	key = key or Runtime.Nearest()
+	local result = Runtime.Check(key, index)
 	result.source = origin or 'export'
 	if not result.ok then
 		publish(result)
 		return result
 	end
 
-	local id = Runtime.elevatorId(key)
+	local id = Runtime.ElevatorId(key)
 	if id == nil then
 		-- sighted but not adopted yet, or adopted by nobody
 		result = { ok = false, error = 'not_adopted', elevator = key, floor = index,
@@ -238,16 +238,16 @@ end
 ---@param key string|nil
 ---@param index integer
 ---@return table
-function Runtime.check(key, index)
-	key = key or Runtime.nearest()
+function OpxElevators.Runtime.Check(key, index)
+	key = key or Runtime.Nearest()
 	if key == nil then return { ok = false, error = 'no_elevator_nearby' } end
-	local elevator = Access.elevator(key)
+	local elevator = Access.Elevator(key)
 	if elevator == nil then return { ok = false, error = 'no_such_elevator', elevator = key } end
-	local floor = Access.floor(key, index)
+	local floor = Access.Floor(key, index)
 	if floor == nil then
 		return { ok = false, error = 'no_such_floor', elevator = key, floor = index }
 	end
-	local ok, failure = Access.evaluate(floor, State.snapshot, nowMs())
+	local ok, failure = Access.Evaluate(floor, State.snapshot, nowMs())
 	return {
 		ok = ok,
 		error = failure,
@@ -259,8 +259,8 @@ function Runtime.check(key, index)
 end
 
 ---@return table
-function Runtime.report()
-	return State.report(nowMs())
+function OpxElevators.Runtime.Report()
+	return State.Report(nowMs())
 end
 
 -- ---------------------------------------------------------------------------

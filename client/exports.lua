@@ -1,8 +1,8 @@
 --- The public export surface. Every call answers a table carrying `ok` and never raises;
 --- `error` is one of the codes in types.lua.
 
-local Runtime = OpxElevators.runtime
-local Panel = OpxElevators.panel
+local Runtime = OpxElevators.Runtime
+local Panel = OpxElevators.Panel
 
 ---@param ok boolean
 ---@param values table|nil
@@ -35,7 +35,7 @@ end
 ---@param elevator string|nil  defaults to the nearest
 ---@return FloorListing
 exports('floors', function(elevator)
-	return nobody() or Runtime.floors(elevator)
+	return nobody() or Runtime.Floors(elevator)
 end)
 
 --- Would this floor be allowed? Sends nothing and moves nothing.
@@ -43,7 +43,7 @@ end)
 ---@param floor integer
 ---@return FloorDecision
 exports('isFloorAllowed', function(elevator, floor)
-	return nobody() or Runtime.check(elevator, floor)
+	return nobody() or Runtime.Check(elevator, floor)
 end)
 
 --- Ask for a floor. `ok = true` means asked; the verdict arrives on
@@ -54,14 +54,14 @@ end)
 exports('requestFloor', function(elevator, floor)
 	local owner = caller()
 	if owner == nil then return response(false, { error = 'export_call_required' }) end
-	return Runtime.use(elevator, floor, owner)
+	return Runtime.Use(elevator, floor, owner)
 end)
 
 --- Open the floor list through opx77_menu.
 ---@param elevator string|nil
 ---@return FloorDecision
 exports('openPanel', function(elevator)
-	return nobody() or Panel.open(elevator)
+	return nobody() or Panel.Open(elevator)
 end)
 
 --- Which configured elevator the player is standing at, or `ok = false`.
@@ -69,9 +69,9 @@ end)
 exports('nearestElevator', function()
 	local gone = nobody()
 	if gone then return gone end
-	local key = Runtime.nearest()
+	local key = Runtime.Nearest()
 	if key == nil then return response(false, { error = 'no_elevator_nearby' }) end
-	return response(true, { elevator = key, id = Runtime.elevatorId(key) })
+	return response(true, { elevator = key, id = Runtime.ElevatorId(key) })
 end)
 
 --- What this client knows: the job, how old the reading is, whether the gate still trusts
@@ -80,7 +80,7 @@ end)
 exports('state', function()
 	local gone = nobody()
 	if gone then return gone end
-	local report = Runtime.report()
+	local report = Runtime.Report()
 	report.ok = true
 	return report
 end)

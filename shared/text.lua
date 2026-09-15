@@ -3,15 +3,15 @@
 
 OpxElevators = OpxElevators or {}
 
-local Text = {}
-OpxElevators.Text = Text
+OpxElevators.Text = {}
+local Text = OpxElevators.Text
 
 --- The byte length of the first `maximum` characters, or the whole text when it is shorter.
 --- Never more than `maximum * 4`, the widest a character can be.
 ---@param text string
 ---@param maximum integer
 ---@return integer
-function Text.span(text, maximum)
+function OpxElevators.Text.Span(text, maximum)
 	local size = #text
 	-- a run of continuation bytes starts no character, so the scan is bounded in bytes as well
 	local ceiling = maximum * 4
@@ -35,14 +35,14 @@ end
 ---@param maximum integer
 ---@param ellipsis? string appended when the text was cut
 ---@return string|nil
-function Text.clean(value, maximum, ellipsis)
+function OpxElevators.Text.Clean(value, maximum, ellipsis)
 	if value == nil then return nil end
 	if type(value) == 'number' then value = tostring(value) end
 	if type(value) ~= 'string' then return nil end
 	value = value:gsub('[%c]', ' ')
 	-- `#value` counts bytes and `maximum` counts characters: fewer bytes needs no measuring
 	if #value <= maximum then return value end
-	local cut = Text.span(value, maximum)
+	local cut = Text.Span(value, maximum)
 	if cut >= #value then return value end
 	return value:sub(1, cut) .. (ellipsis or '')
 end

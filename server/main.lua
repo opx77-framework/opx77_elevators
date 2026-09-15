@@ -1,11 +1,11 @@
 --- The server half: adoption, and everything a server can prove about a floor request.
 
 local Config = OPX_ELEVATORS_CONFIG
-local Access = OpxElevators.access
+local Access = OpxElevators.Access
 local Text = OpxElevators.Text
 
-local Server = {}
-OpxElevators.server = Server
+OpxElevators.Server = {}
+local Server = OpxElevators.Server
 
 --- key -> { id, entity, bucket, floorCount }. What this resource adopted; the host's `all()`
 --- is the authority and this is the index.
@@ -52,7 +52,7 @@ local function nowMs()
 end
 
 --- The coercions both halves measure with; one implementation, in shared/access.lua.
-local coordinate, integer = Access.coordinate, Access.integer
+local coordinate, integer = Access.Coordinate, Access.Integer
 
 --- Engine identifiers are opaque: compared as lower-cased strings, never through `tonumber`.
 ---@return boolean
@@ -68,7 +68,7 @@ local MAX_LOGGED = 64
 ---@param value any
 ---@return string
 local function safe(value)
-	return Text.clean(value, MAX_LOGGED, '...') or ''
+	return Text.Clean(value, MAX_LOGGED, '...') or ''
 end
 
 ---@return boolean
@@ -110,14 +110,14 @@ local function atElevator(key, lift)
 	local position = lift.position or lift
 	local x, y = coordinate(position.x), coordinate(position.y)
 	if x == nil or y == nil then return false end
-	local flat = Access.flatDistanceSquared(key, x, y)
+	local flat = Access.FlatDistanceSquared(key, x, y)
 	return flat ~= nil and flat <= Access.MATCH_RADIUS_SQ
 end
 
 --- Take ownership of a native lift a client has just reported. Answers a value, never raises.
 ---@return table
-function Server.adopt(key, entity, x, y, z, bucket, floorCount, activeFloor)
-	local configured = Access.elevator(key)
+function OpxElevators.Server.Adopt(key, entity, x, y, z, bucket, floorCount, activeFloor)
+	local configured = Access.Elevator(key)
 	-- type-checked: `all()` is a host call, and a raise off a net event is swallowed silently
 	local adopted = Open77.elevators.all(bucket)
 	local adoptedCount = type(adopted) == 'table' and #adopted or 0
@@ -197,7 +197,7 @@ RegisterNetEvent('opx77_elevators:sighted', function(entity, x, y, z, floorCount
 	local dx, dy, dz = x - px, y - py, z - pz
 	if dx * dx + dy * dy + dz * dz > Access.SCAN_RADIUS_SQ then return end
 
-	local key, elevator = Access.locate(x, y, z, entity)
+	local key, elevator = Access.Locate(x, y, z, entity)
 	if key == nil then return end
 
 	-- the bucket is the ELEVATOR's, never the reporter's: otherwise the first passer-by fixes
@@ -226,7 +226,7 @@ RegisterNetEvent('opx77_elevators:sighted', function(entity, x, y, z, floorCount
 		return
 	end
 
-	local result = Server.adopt(key, entity, x, y, z, bucket, floorCount, activeFloor)
+	local result = Server.Adopt(key, entity, x, y, z, bucket, floorCount, activeFloor)
 	if not result.ok then
 		-- throttled with the request refusals: a client sights faster than a disk write
 		if within(logWindows, player, 1, 1000) then
@@ -239,7 +239,7 @@ RegisterNetEvent('opx77_elevators:sighted', function(entity, x, y, z, floorCount
 	told[key][player] = true
 	Open77.log.info(('%s adopted as elevator %s in bucket %s'):format(key, tostring(result.id),
 		tostring(bucket)))
-	-- the count is read from the record: `Server.adopt` settled it between config and host
+	-- the count is read from the record: `Server.Adopt` settled it between config and host
 	local record = owned[key]
 	TriggerClientEvent('opx77_elevators:bound', player, key, result.id,
 		record and record.floorCount or floorCount)
@@ -263,16 +263,16 @@ end
 
 --- Everything the server can prove about one floor request.
 ---@return table
-function Server.request(player, key, index)
+function OpxElevators.Server.Request(player, key, index)
 	if not within(requestWindows, player, Config.REQUESTS_PER_WINDOW,
 		Config.REQUEST_WINDOW_MS) then
 		return { ok = false, error = 'rate_limited' }
 	end
 
-	local elevator = Access.elevator(key)
+	local elevator = Access.Elevator(key)
 	if elevator == nil then return { ok = false, error = 'no_such_elevator' } end
 	index = integer(index)
-	local floor = index ~= nil and Access.floor(key, index) or nil
+	local floor = index ~= nil and Access.Floor(key, index) or nil
 	if floor == nil then return { ok = false, error = 'no_such_floor' } end
 
 	local record = owned[key]
@@ -295,7 +295,7 @@ function Server.request(player, key, index)
 	if px == nil or py == nil then return { ok = false, error = 'no_position' } end
 	-- across the ground, and against the DECLARED position: the cabin may be up the shaft,
 	-- and an elevator is callable from every floor of its own
-	local reach = Access.flatDistanceSquared(key, px, py)
+	local reach = Access.FlatDistanceSquared(key, px, py)
 	if reach == nil or reach > Access.USE_RADIUS_SQ then
 		return { ok = false, error = 'too_far' }
 	end
@@ -315,7 +315,7 @@ end
 RegisterNetEvent('opx77_elevators:request', function(key, index)
 	local player = tonumber(source) or 0
 	if player <= 0 then return end
-	local result = Server.request(player, key, index)
+	local result = Server.Request(player, key, index)
 	-- the rate limit governs the cabin, not this answer; dropped only when it is the reason
 	if result.error ~= 'rate_limited' then
 		TriggerClientEvent('opx77_elevators:answer', player, safe(key), integer(index),
@@ -349,7 +349,7 @@ end)
 --- `onPlayerRejected` instead, which this resource has no reason to listen for.
 ---@param playerId any  a string, like every host event argument
 ---@param reason? any  `connection_closed`, or the text a disconnect, kick or ban carried
-function Server.forget(playerId, reason)
+function OpxElevators.Server.Forget(playerId, reason)
 	local player = tonumber(playerId) or 0
 	if player <= 0 then return end
 	sightWindows[player] = nil
@@ -396,7 +396,7 @@ CreateThread(function()
 				end
 			end
 			-- `within` allocates a window lazily, so a packet arriving after a player has gone
-			-- recreates the entry `Server.forget` just removed and nothing ever clears it again --
+			-- recreates the entry `Server.Forget` just removed and nothing ever clears it again --
 			-- and a recycled player id would inherit that stranded counter. Every window here is
 			-- spent long before this runs, so dropping the expired ones costs nothing and bounds
 			-- the tables by the number of players actually connected.
@@ -410,7 +410,7 @@ CreateThread(function()
 	end
 end)
 
-AddEventHandler('onPlayerDisconnected', Server.forget)
+AddEventHandler('onPlayerDisconnected', Server.Forget)
 
 -- ---------------------------------------------------------------------------
 -- Diagnostics
@@ -420,7 +420,7 @@ if type(Config.COMMAND) == 'string' and Config.COMMAND ~= '' then
 	--- Restricted: it prints world positions and adoption state, which is operator information.
 	RegisterCommand(Config.COMMAND, function(commandSource, args, raw)
 		local lines = {}
-		local problems = Access.problems()
+		local problems = Access.Problems()
 		for index = 1, #problems do lines[index] = 'config: ' .. problems[index] end
 		local filter = args and args[1]
 		local report = {}
@@ -499,7 +499,7 @@ end
 if type(Open77.elevators) ~= 'table' then
 	Open77.log.error('native elevator API unavailable; no elevator will be adopted')
 else
-	local problems = Access.problems()
+	local problems = Access.Problems()
 	for index = 1, #problems do
 		-- said at boot as well as on demand: every one produces the same symptom, a dead button
 		Open77.log.warn('config: ' .. problems[index])

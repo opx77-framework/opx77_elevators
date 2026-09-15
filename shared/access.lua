@@ -2,15 +2,15 @@
 
 OpxElevators = OpxElevators or {}
 
-local Access = {}
-OpxElevators.access = Access
+OpxElevators.Access = {}
+local Access = OpxElevators.Access
 
 local Config = OPX_ELEVATORS_CONFIG
 
 --- The configured elevators, or an empty table: every read below is reachable from an
 --- export, and `problems()` reports a missing ELEVATORS rather than raising on it.
 local ELEVATORS = type(Config.ELEVATORS) == 'table' and Config.ELEVATORS or {}
-Access.ELEVATORS = ELEVATORS
+OpxElevators.Access.ELEVATORS = ELEVATORS
 
 --- Failure ranking, so the closest near-miss is reported rather than the first `pairs` found.
 local RANK = { off_duty = 3, grade_too_low = 2, job_required = 1 }
@@ -26,11 +26,11 @@ local function finiteNumber(value)
 	end
 	return value
 end
-Access.finiteNumber = finiteNumber
+OpxElevators.Access.FiniteNumber = finiteNumber
 
 --- The box every accepted coordinate must fit inside, and the ceiling on any `%d` argument.
 local BOUND = 1000000
-Access.BOUND = BOUND
+OpxElevators.Access.BOUND = BOUND
 
 --- A world coordinate: finite, and inside BOUND.
 ---@param value any
@@ -40,7 +40,7 @@ local function coordinate(value)
 	if parsed == nil or parsed > BOUND or parsed < -BOUND then return nil end
 	return parsed
 end
-Access.coordinate = coordinate
+OpxElevators.Access.Coordinate = coordinate
 
 --- A whole number inside BOUND; `%d` raises on a float with no integer representation.
 ---@param value any
@@ -50,7 +50,7 @@ local function integer(value)
 	if parsed == nil or parsed % 1 ~= 0 then return nil end
 	return math.floor(parsed)
 end
-Access.integer = integer
+OpxElevators.Access.Integer = integer
 
 --- key -> its declared ENTITY, lower-cased once at load.
 local ENTITY_HASHES = {}
@@ -72,15 +72,15 @@ end
 local MATCH_RADIUS = finiteNumber(Config.MATCH_RADIUS) or 0
 local USE_RADIUS = finiteNumber(Config.USE_RADIUS) or 0
 local SCAN_RADIUS = finiteNumber(Config.SCAN_RADIUS) or 0
-Access.MATCH_RADIUS_SQ = MATCH_RADIUS * MATCH_RADIUS
-Access.USE_RADIUS = USE_RADIUS
-Access.USE_RADIUS_SQ = USE_RADIUS * USE_RADIUS
-Access.SCAN_RADIUS_SQ = SCAN_RADIUS * SCAN_RADIUS
+OpxElevators.Access.MATCH_RADIUS_SQ = MATCH_RADIUS * MATCH_RADIUS
+OpxElevators.Access.USE_RADIUS = USE_RADIUS
+OpxElevators.Access.USE_RADIUS_SQ = USE_RADIUS * USE_RADIUS
+OpxElevators.Access.SCAN_RADIUS_SQ = SCAN_RADIUS * SCAN_RADIUS
 
 --- Read once for the same reason: an export must answer, and comparing a millisecond count
 --- with a value an operator mistyped as a string raises.
 local JOB_MAX_AGE_MS = finiteNumber(Config.JOB_MAX_AGE_MS) or 0
-Access.JOB_MAX_AGE_MS = JOB_MAX_AGE_MS
+OpxElevators.Access.JOB_MAX_AGE_MS = JOB_MAX_AGE_MS
 
 --- Horizontal distance, squared, or nil when the elevator has no usable X and Y.
 --- Z never enters it: an elevator is callable from every floor of its own shaft.
@@ -88,7 +88,7 @@ Access.JOB_MAX_AGE_MS = JOB_MAX_AGE_MS
 ---@param x number  already a coordinate: the caller validates its own reading once
 ---@param y number
 ---@return number|nil
-function Access.flatDistanceSquared(key, x, y)
+function OpxElevators.Access.FlatDistanceSquared(key, x, y)
 	local at = POSITIONS[key]
 	if at == nil then return nil end
 	local dx, dy = x - at.x, y - at.y
@@ -101,7 +101,7 @@ end
 
 ---@param key any
 ---@return table|nil
-function Access.elevator(key)
+function OpxElevators.Access.Elevator(key)
 	if type(key) ~= 'string' then return nil end
 	local elevator = ELEVATORS[key]
 	if type(elevator) ~= 'table' then return nil end
@@ -112,8 +112,8 @@ end
 ---@param key string
 ---@param index integer
 ---@return table|nil
-function Access.floor(key, index)
-	local elevator = Access.elevator(key)
+function OpxElevators.Access.Floor(key, index)
+	local elevator = Access.Elevator(key)
 	index = finiteNumber(index)
 	if elevator == nil or index == nil then return nil end
 	local floors = elevator.FLOORS
@@ -130,7 +130,7 @@ end
 --- A declared ENTITY pins which one; X and Y must still agree, and Z never decides.
 ---@param entity string|nil
 ---@return string|nil key, table|nil elevator
-function Access.locate(x, y, z, entity)
+function OpxElevators.Access.Locate(x, y, z, entity)
 	-- z is validated and then ignored: a report with a broken axis is a broken report
 	x, y = coordinate(x), coordinate(y)
 	if x == nil or y == nil or coordinate(z) == nil then return nil, nil end
@@ -179,7 +179,7 @@ end
 ---@param snapshot table|nil  as client/state.lua keeps it, or nil when the core never answered
 ---@param nowMs integer
 ---@return boolean ok, string|nil error
-function Access.evaluate(floor, snapshot, nowMs)
+function OpxElevators.Access.Evaluate(floor, snapshot, nowMs)
 	if type(floor) ~= 'table' then return false, 'no_such_floor' end
 	local required = floor.JOBS
 	-- a public floor stays open with no snapshot: a core outage must not trap a lobby
@@ -216,8 +216,8 @@ end
 ---@param snapshot table|nil
 ---@param nowMs integer
 ---@return table rows  `{ index, label, ok, error, reason }`
-function Access.list(key, snapshot, nowMs)
-	local elevator = Access.elevator(key)
+function OpxElevators.Access.List(key, snapshot, nowMs)
+	local elevator = Access.Elevator(key)
 	if elevator == nil then return {} end
 	local floors = elevator.FLOORS
 	if type(floors) ~= 'table' then return {} end
@@ -227,7 +227,7 @@ function Access.list(key, snapshot, nowMs)
 		local floor = floors[position]
 		-- a malformed entry is skipped, not drawn: `problems()` is where it is reported
 		if type(floor) == 'table' then
-			local ok, failure = Access.evaluate(floor, snapshot, nowMs)
+			local ok, failure = Access.Evaluate(floor, snapshot, nowMs)
 			if ok or not hide then
 				rows[#rows + 1] = {
 					index = floor.INDEX,
@@ -252,7 +252,7 @@ local NUMBERS = { 'MATCH_RADIUS', 'USE_RADIUS', 'SCAN_RADIUS', 'SCAN_MS', 'POLL_
 --- Everything wrong with the configuration that can be seen without a world.
 --- It cannot check a job NAME: those live in opx77_core, which this VM cannot ask.
 ---@return string[]
-function Access.problems()
+function OpxElevators.Access.Problems()
 	local lines = {}
 	if type(Config.ELEVATORS) ~= 'table' then
 		lines[#lines + 1] = 'ELEVATORS must be a table of elevator key -> definition'
