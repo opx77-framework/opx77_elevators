@@ -29,6 +29,8 @@
 ---| "move_rejected"        `goTo` refused                            (server)
 ---| "adopt_refused"        `adopt` answered nil                      (server)
 ---| "adopt_raised"         `adopt` raised                            (server)
+---| "wrong_place"          the sighted cabin is not at this key       (server, log only)
+---| "already_owned"        that cabin is already bound to another key (server, log only)
 ---| "not_sent"             the net event was not accepted            (client)
 
 --- One entry of config.lua's ELEVATORS.
@@ -89,7 +91,7 @@
 ---@field queued boolean|nil
 ---@field source string|nil  "panel", "server", or the invoking resource's own name
 
---- What `OpxElevators.runtime.report` answers.
+--- What `OpxElevators.Runtime.Report` answers.
 ---@class ElevatorClientState : ElevatorResponse
 ---@field job string|nil       the primary job's name, or nil
 ---@field grade integer|nil

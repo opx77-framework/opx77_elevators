@@ -9,9 +9,8 @@
 > **Do not rely on the current API for production resources yet.**
 
 > [!IMPORTANT]
-> **The job check is a client-side hint: the Open77 server runtime has no cross-resource event
-> bus, so this resource's server half cannot ask `opx77_core` for a job and cannot re-derive
-> the check.**
+> **The job check is a client-side hint: this resource's server half does not re-derive it,
+> because `opx77_core` has no server export that answers a player's job yet.**
 >
 > It re-derives everything else — the elevator, the floor, the player's position and routing
 > bucket, the rate. Gate flavour on the job, never money or a body count; an unforgeable
@@ -30,6 +29,7 @@ grades and the wording all live in `config.lua`.
 - One panel for the whole shaft: an elevator is callable from every one of its own floors
 - Native lifts adopted on sight and locked, so the cabin answers this resource alone
 - The panel is `opx77_menu`'s, and optional — a missing menu costs one log line
+- A floor refused after a pick is said in an `opx77_notify` toast, or a chat line without one
 
 ## Exports
 
@@ -45,6 +45,10 @@ grades and the wording all live in `config.lua`.
 `floors` defaults to the elevator the player is standing at and returns its key, so a caller
 drawing its own panel needs nothing else.
 
+Every export answers a table carrying `ok` and never raises; the `error` codes are listed, with
+the half that decides each, in `std/types.lua` (`ElevatorError`). `ok = true` from
+`requestFloor` means asked: the server's verdict arrives on the local event named by `EVENT`.
+
 ## Commands
 
 | Command | Gated |
@@ -52,14 +56,52 @@ drawing its own panel needs nothing else.
 | `opx77.elevators.where [key]` | ACL — each configured elevator: position, floors, adoption and the native lift's state |
 
 The name is `COMMAND` in `config.lua`, and `false` registers nothing. Given a key it reports
-that elevator alone. Its chat suggestion, with the configured keys as the argument's help, is
+that elevator alone. The report is a diagnostic dump, so it stays text: printed to the server
+console, and sent to a player who ran it as chat lines, one per elevator, each through
+`chat:addMessage` rather than `open77:command:result`, whose accepted answers `opx77_chat` does
+not print. Its chat suggestion, with the configured keys as the argument's help, is
 sent only to a player the ACL grants `command.<name>`; that read is why the manifest declares
 `acl.read`, and a host without the ACL reader suggests it to nobody.
 
 ## Configuration
 
 `config.lua`. Each elevator by a durable key: where the shaft is, how many floors the native
-device has, and the stops this resource offers with their job requirements.
+device has, and the stops this resource offers with their job requirements. Job names must exist
+in `opx77_core/data/jobs.lua`; this resource does not check them.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `LOCALE` | `"en"` | which `locales/*.lua` catalogue player-facing text is read from |
+| `DENIED_FLOORS` | `"shown"` | floors the player cannot reach: `"shown"` greyed with their reason, or `"hidden"` |
+| `MEMBERSHIP` | `"primary"` | `"primary"` reads the job being worked, `"any"` the whole membership map (grades only: duty is always the primary job's) |
+| `JOB_MAX_AGE_MS` | `60000` | past this snapshot age every gated floor closes; public floors never do |
+| `POLL_MS` | `15000` | how often the client re-reads the character from `opx77_core` |
+| `SCAN_MS` | `2000` | how often the client looks for native lifts; a sighting is believed for two scans |
+| `EVENT` | `"opx77:elevators"` | local client event raised after every decision |
+| `MATCH_RADIUS` | `6.0` | metres, across the ground, a native lift may stand from a declared position |
+| `USE_RADIUS` | `4.0` | metres, across the ground, the player may stand from it to use the panel |
+| `SCAN_RADIUS` | `40.0` | metres from the player a client's sighting report is believed |
+| `TRAVEL_MS` | `8000` | how long the cabin takes to travel |
+| `REQUEST_WINDOW_MS` | `10000` | the rate limit window, per player |
+| `REQUESTS_PER_WINDOW` | `6` | floor requests one player may make in that window |
+| `COMMAND` | `"opx77.elevators.where"` | the ACL-gated diagnostic command, or `false` for none |
+| `ELEVATORS` | four samples | elevator key -> definition, below |
+
+Each `ELEVATORS` entry:
+
+| Field | Meaning |
+|---|---|
+| `LABEL` | the panel title |
+| `X`, `Y`, `Z` | where the shaft is; the shipped positions are placeholders, probe real ones with `open77:elevators:nearby` |
+| `BUCKET` | routing bucket, `0` when omitted; an elevator in a bucket is invisible to players outside it |
+| `ENTITY` | optional native lift hash (`"0x"` and 16 hex digits); pins which shaft a lift is when two stand close |
+| `FLOOR_COUNT` | the native device's floor count, not the length of `FLOORS` |
+| `FLOORS` | the stops offered, in panel order |
+| `FLOORS[].INDEX` | the native floor index, 0-based |
+| `FLOORS[].LABEL` | the row label |
+| `FLOORS[].JOBS` | job name -> minimum grade level, e.g. `{ ncpd = 0 }`; a floor without `JOBS` is public |
+| `FLOORS[].ON_DUTY` | also require the character to be on duty in that job |
+| `FLOORS[].REASON` | shown beside a refused row |
 
 An elevator's `X` and `Y` place the shaft and are the only pair a distance is measured on;
 `Z` is recorded and never compared. `MATCH_RADIUS` decides which shaft a native lift is and
@@ -72,9 +114,18 @@ on. The server's answer is the one that counts.
 
 Every radius and every timer in `config.lua` is checked at boot; one that is missing or is not
 a positive number is named in a warning and read as zero, rather than raising mid-request.
+`SCAN_MS` is read as whole milliseconds (`"2000"` and `2000.5` both scan every 2000 ms); one
+that comes out below 1 is logged as an error on the client, which then runs no scan loop at
+all, so no panel opens and the character is not polled until the value is fixed.
 
 Every adopted lift is locked with the host's own flag, so the elevator authority refuses a
 request sent straight off a client and this resource is the only way the cabin moves.
+
+## Architecture
+
+Why the resource is written the way it is — the manifest order, what the server re-derives, how
+adoption and the sweep work, and the known limits — is in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (French). LuaLS types and stubs live in `std/`.
 
 ## Locales
 

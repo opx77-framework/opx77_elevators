@@ -1,15 +1,19 @@
+--- @author DemiAutomatic
+--- @file open77.lua
+--- @description Resource manifest declaring scripts, permissions and reload policy.
+
 resource "opx77_elevators"
-version "0.4.0"
+version "0.5.0"
 open77_version ">=0.0.1"
 auto_start true
 
-reload_policy "local" -- no CEF surface; the server re-adopts from the next client sighting
+reload_policy "local"
 
 shared_script "config.lua"
 shared_script "shared/text.lua"
 shared_script "shared/locale.lua"
-shared_script "locales/en.lua" -- registered right after the catalogue, so no file
-shared_script "locales/fr.lua" -- below calls locale() against an empty one
+shared_script "locales/en.lua"
+shared_script "locales/fr.lua"
 shared_script "shared/access.lua"
 
 server_script "server/main.lua"
@@ -17,13 +21,11 @@ server_script "server/main.lua"
 client_script "client/state.lua"
 client_script "client/main.lua"
 client_script "client/panel.lua"
-client_script "client/exports.lua" -- last: publishing the surface claims it exists
+client_script "client/exports.lua"
 
 permissions {
   "network.events",
-  "world.elevators", -- adopt a native lift, lock it, and move the cabin
+  "world.elevators",
   "elevators.read",
-  -- Server: Open77.acl.isAllowed, so the diagnostic command is suggested in the chat only to a
-  -- player the ACL would let run it. Read-only.
   "acl.read",
 }
