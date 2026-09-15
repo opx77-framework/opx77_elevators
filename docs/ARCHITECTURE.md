@@ -223,13 +223,13 @@ terminerait le balayage pour la vie du processus) fait deux choses :
 
 ## Horloge
 
-`nowMs` lit l'horloge monotone de l'hôte (`Open77.time.monotonic` répond en **secondes**). Une
-lecture non finie est écartée : un NaN n'expirerait rien, un infini tout. Côté serveur, une lecture
-qui échoue retombe sur `GetGameTimer`, la même horloge d'ordonnanceur déjà en millisecondes, avec un
-avertissement unique : garder la dernière lecture n'est pas une dégradation sûre, car toutes les
-échéances du fichier partagent cette horloge, et une horloge figée saturerait chaque fenêtre de
-cadence pour de bon et arrêterait le balayage. Le client garde sa dernière lecture (voir « Limites
-connues »).
+`OpxElevators.NowMs` (dans `shared/access.lua`, lue par les deux moitiés) lit l'horloge monotone de
+l'hôte (`Open77.time.monotonic` répond en **secondes**). Une lecture non finie est écartée : un NaN
+n'expirerait rien, un infini tout. Une lecture qui échoue retombe sur `GetGameTimer`, la même
+horloge d'ordonnanceur déjà en millisecondes, avec un avertissement unique : garder la dernière
+lecture n'est pas une dégradation sûre, car toutes les échéances partagent cette horloge, et une
+horloge figée saturerait chaque fenêtre de cadence pour de bon et arrêterait le balayage. Quand
+aucune des deux ne répond, la dernière lecture est gardée (voir « Limites connues »).
 
 ## Configuration et diagnostic
 
@@ -292,8 +292,10 @@ minuscules : les fichiers de traduction des opérateurs l'appellent.
 
 ## Limites connues
 
-- **L'horloge client garde sa dernière lecture** au lieu de retomber sur `GetGameTimer` : figée,
-  elle ne relit plus le cœur et ne fait plus vieillir ni l'instantané ni les signalements.
+- **L'horloge client peut encore se figer** : la documentation de la plateforme ne donne
+  `GetGameTimer` que côté serveur, donc si `Open77.time.monotonic` cesse de répondre sur un client,
+  `NowMs` y garde sa dernière lecture ; le client ne relit plus le cœur et ne fait plus vieillir ni
+  l'instantané ni les signalements.
 - **`SCAN_MS` reste passé brut à `Wait`** : une valeur invalide arrête la boucle de scan du client
   au lieu de la faire tourner à chaque image, ce qui est la panne la moins coûteuse ; `STALE_MS` la
   lit comme zéro et le panneau ne s'ouvre alors jamais, symptôme que `Problems` explique au

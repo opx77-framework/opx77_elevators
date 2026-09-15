@@ -1,5 +1,11 @@
 ---@meta
 
+--- The scheduler clock in milliseconds (`Open77.time.monotonic` answers seconds). A non-finite
+--- reading is dropped; an unreadable one falls back to `GetGameTimer`, with one warning, and
+--- when neither answers the last reading is kept.
+---@return integer
+function OpxElevators.NowMs() end
+
 OpxElevators.Access = {}
 
 --- The configured elevators, or an empty table when `ELEVATORS` is not a table.

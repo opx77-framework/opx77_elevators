@@ -1,8 +1,40 @@
 --- @author DemiAutomatic
 --- @file shared/access.lua
---- @description The gate: config reads, coercions and floor decisions for both halves.
+--- @description The clock, config reads, coercions and floor decisions for both halves.
 
 OpxElevators = OpxElevators or {}
+
+--- @author DemiAutomatic
+--- @type {integer}
+--- @description Last clock reading in milliseconds, answered when both clocks fail.
+local lastMs = 0
+
+--- @author DemiAutomatic
+--- @type {boolean}
+--- @description Whether the fallback to GetGameTimer has been logged.
+local clockWarned = false
+
+--- @author DemiAutomatic
+--- @method OpxElevators.NowMs
+--- @description Reads the scheduler clock in milliseconds, falling back to GetGameTimer.
+--- @returns {integer}
+function OpxElevators.NowMs()
+	local read, seconds = pcall(Open77.time.monotonic)
+	if read and type(seconds) == 'number' and seconds == seconds and
+		seconds >= 0 and seconds < math.huge then
+		lastMs = math.floor(seconds * 1000)
+		return lastMs
+	end
+	local ticked, ms = pcall(GetGameTimer)
+	if ticked and type(ms) == 'number' and ms == ms and ms >= 0 and ms < math.huge then
+		if not clockWarned then
+			clockWarned = true
+			Open77.log.warn('Open77.time.monotonic unreadable; falling back to GetGameTimer')
+		end
+		lastMs = math.floor(ms)
+	end
+	return lastMs
+end
 
 OpxElevators.Access = {}
 local Access = OpxElevators.Access

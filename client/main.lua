@@ -41,23 +41,7 @@ local sighted = {}
 --- @description Whether the scan loop should keep running.
 local running = false
 
---- @author DemiAutomatic
---- @type {integer}
---- @description Last finite clock reading in milliseconds.
-local lastMs = 0
-
---- @author DemiAutomatic
---- @method nowMs
---- @description Reads the scheduler clock in milliseconds, keeping the last finite reading.
---- @returns {integer}
-local function nowMs()
-	local read, seconds = pcall(Open77.time.monotonic)
-	if read and type(seconds) == 'number' and seconds == seconds and
-		seconds >= 0 and seconds < math.huge then
-		lastMs = math.floor(seconds * 1000)
-	end
-	return lastMs
-end
+local nowMs = OpxElevators.NowMs
 
 --- @author DemiAutomatic
 --- @method publish
