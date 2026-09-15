@@ -6,9 +6,6 @@ local Config = OPX_ELEVATORS_CONFIG
 local Access = OpxElevators.Access
 local Text = OpxElevators.Text
 
-OpxElevators.Server = {}
-local Server = OpxElevators.Server
-
 --- @author DemiAutomatic
 --- @type {table<string, table>}
 --- @description Elevator key to what this resource adopted; the host is authority.
@@ -140,7 +137,7 @@ local function atElevator(key, lift)
 end
 
 --- @author DemiAutomatic
---- @method OpxElevators.Server.Adopt
+--- @method adopt
 --- @description Takes ownership of a sighted native lift, or re-claims it.
 --- @param key {string}
 --- @param entity {string}
@@ -151,7 +148,7 @@ end
 --- @param floorCount {integer}
 --- @param activeFloor {integer}
 --- @returns {table}
-function OpxElevators.Server.Adopt(key, entity, x, y, z, bucket, floorCount, activeFloor)
+local function adopt(key, entity, x, y, z, bucket, floorCount, activeFloor)
 	local adopted = Open77.elevators.all(bucket)
 	local adoptedCount = type(adopted) == 'table' and #adopted or 0
 	for index = 1, adoptedCount do
@@ -252,7 +249,7 @@ RegisterNetEvent('opx77_elevators:sighted', function(entity, x, y, z, floorCount
 		return
 	end
 
-	local result = Server.Adopt(key, entity, x, y, z, bucket, floorCount, activeFloor)
+	local result = adopt(key, entity, x, y, z, bucket, floorCount, activeFloor)
 	if not result.ok then
 		if within(logWindows, player, 1, 1000) then
 			Open77.log.warn(('%s not adopted: %s (%s)'):format(key, result.error,
@@ -282,13 +279,13 @@ local function release(key)
 end
 
 --- @author DemiAutomatic
---- @method OpxElevators.Server.Request
+--- @method request
 --- @description Checks everything the server can prove, then moves the cabin.
 --- @param player {integer}
 --- @param key {any}
 --- @param index {any}
 --- @returns {table}
-function OpxElevators.Server.Request(player, key, index)
+local function request(player, key, index)
 	if not within(requestWindows, player, REQUESTS_PER_WINDOW, REQUEST_WINDOW_MS) then
 		return { ok = false, error = 'rate_limited' }
 	end
@@ -335,7 +332,7 @@ end
 RegisterNetEvent('opx77_elevators:request', function(key, index)
 	local player = tonumber(source) or 0
 	if player <= 0 then return end
-	local result = Server.Request(player, key, index)
+	local result = request(player, key, index)
 	if result.error ~= 'rate_limited' then
 		TriggerClientEvent('opx77_elevators:answer', player, safe(key), integer(index),
 			result.ok, result.error)
@@ -363,11 +360,11 @@ AddEventHandler('onElevatorRemoved', function(id, _, reason)
 end)
 
 --- @author DemiAutomatic
---- @method OpxElevators.Server.Forget
+--- @method forget
 --- @description Forgets a departing player and recalls a cabin left in motion.
 --- @param playerId {any}
 --- @param reason {any}
-function OpxElevators.Server.Forget(playerId, reason)
+local function forget(playerId, reason)
 	local player = tonumber(playerId) or 0
 	if player <= 0 then return end
 	sightWindows[player] = nil
@@ -425,7 +422,7 @@ end)
 --- @author DemiAutomatic
 --- @event onPlayerDisconnected
 --- @description Forgets an admitted player's windows, audiences and ride.
-AddEventHandler('onPlayerDisconnected', Server.Forget)
+AddEventHandler('onPlayerDisconnected', forget)
 
 if type(Config.COMMAND) == 'string' and Config.COMMAND ~= '' then
 	--- @author DemiAutomatic

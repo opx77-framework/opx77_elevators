@@ -58,7 +58,7 @@ premier, les étages publics restent ouverts et les étages gardés se ferment ;
 Le runtime serveur d'Open77 n'a pas de bus d'événements inter-resources : la moitié serveur ne
 peut pas demander un métier à `opx77_core` et ne peut donc pas refaire la vérification. Elle
 refait tout le reste — l'ascenseur, l'étage, la position et le bucket du joueur, la cadence — et
-`OpxElevators.Server.Request` ne contient aucune clause de métier. Les codes de métier
+`request` (dans `server/main.lua`) ne contient aucune clause de métier. Les codes de métier
 (`no_character`, `job_stale`, `job_required`, `grade_too_low`, `off_duty`) sont décidés sur le
 client et restent des indices.
 
@@ -141,7 +141,7 @@ Le serveur choisit lui-même l'ascenseur, le bucket et le nombre d'étages (`opx
 - **Le nombre d'étages aussi** : il devient le plafond contre lequel chaque index est vérifié. Un
   écart entre le client et `FLOOR_COUNT` est journalisé une fois par ascenseur (`warnedCount`).
 
-`OpxElevators.Server.Adopt` répond une valeur et ne lève jamais. `Open77.elevators.all` est un
+`adopt` (dans `server/main.lua`) répond une valeur et ne lève jamais. `Open77.elevators.all` est un
 appel hôte, et une levée depuis un gestionnaire réseau est avalée en silence : sa réponse est
 contrôlée comme table. `adopt` est enveloppé dans un `pcall` parce qu'il n'est pas documenté qu'il
 ne lève pas. Un ascenseur déjà tenu par l'hôte est **ré-réclamé** (après un redémarrage de cette
@@ -177,7 +177,7 @@ serveur de cette resource gagne sur un scan, car `nearby` signale aussi les asce
 d'autres. Sans identifiant (vu mais pas encore adopté), la demande est refusée `not_adopted` sans
 partir.
 
-`OpxElevators.Server.Request` revérifie, dans l'ordre : la cadence (`REQUESTS_PER_WINDOW` par
+`request` (dans `server/main.lua`) revérifie, dans l'ordre : la cadence (`REQUESTS_PER_WINDOW` par
 `REQUEST_WINDOW_MS`), l'ascenseur, l'étage, l'adoption, le nombre d'étages natif, la position, le
 bucket, la portée au sol. Un ascenseur que l'hôte ne connaît plus est **libéré**, pas seulement
 oublié : un client qui garderait l'identifiant mort ne resignalerait jamais l'ascenseur.
@@ -198,7 +198,7 @@ oublié : un client qui garderait l'identifiant mort ne resignalerait jamais l'a
 `onPlayerDisconnected` est le départ d'un joueur **admis** ; une connexion refusée à la porte lève
 `onPlayerRejected`, que cette resource n'a aucune raison d'écouter. Son `reason` vaut
 `connection_closed` ou le texte d'une déconnexion, d'une expulsion ou d'un bannissement.
-`OpxElevators.Server.Forget` efface les fenêtres du joueur et ses audiences.
+`forget` efface les fenêtres du joueur et ses audiences.
 
 **Une cabine laissée en mouvement est rappelée.** `Request` retient le passager (`rider`) et la fin
 du trajet (`rideEndsAtMs`) ; un départ pendant le trajet renvoie la cabine à l'étage 0, que chaque
