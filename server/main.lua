@@ -21,8 +21,8 @@ local told = {}
 
 --- @author DemiAutomatic
 --- @type {table<integer, table>}
---- @description Per-player rate-limit windows for sightings, requests and log lines.
-local sightWindows, requestWindows, logWindows = {}, {}, {}
+--- @description Per-player rate-limit windows: sightings, requests, log lines, suggestions.
+local sightWindows, requestWindows, logWindows, suggestWindows = {}, {}, {}, {}
 
 --- @author DemiAutomatic
 --- @type {table<string, boolean>}
@@ -396,6 +396,7 @@ function OpxElevators.Server.Forget(playerId, reason)
 	sightWindows[player] = nil
 	requestWindows[player] = nil
 	logWindows[player] = nil
+	suggestWindows[player] = nil
 	for _, players in pairs(told) do players[player] = nil end
 
 	local at = nowMs()
@@ -434,7 +435,7 @@ CreateThread(function()
 						:format(key, math.floor(UNUSED_MS / 60000)))
 				end
 			end
-			for _, windows in ipairs({ sightWindows, requestWindows, logWindows }) do
+			for _, windows in ipairs({ sightWindows, requestWindows, logWindows, suggestWindows }) do
 				for player, window in pairs(windows) do
 					if at - (window.started or at) > WINDOW_GC_MS then windows[player] = nil end
 				end
@@ -493,11 +494,6 @@ if type(Config.COMMAND) == 'string' and Config.COMMAND ~= '' then
 	end, true)
 
 	--- @author DemiAutomatic
-	--- @type {table<integer, table>}
-	--- @description Per-player window of the last suggestion sent.
-	local suggestWindows = {}
-
-	--- @author DemiAutomatic
 	--- @type {integer}
 	--- @description Shortest gap between two suggestions to one player.
 	local SUGGEST_EVERY_MS = 10000
@@ -529,14 +525,6 @@ if type(Config.COMMAND) == 'string' and Config.COMMAND ~= '' then
 				{ name = 'key', optional = true, help = locale('elevators.help.whereKey',
 					{ keys = #keys > 0 and table.concat(keys, ', ') or '-' }) },
 			})
-	end)
-
-	--- @author DemiAutomatic
-	--- @event onPlayerDisconnected
-	--- @description Forgets a departing player's suggestion window.
-	--- @param playerId {any}
-	AddEventHandler('onPlayerDisconnected', function(playerId)
-		suggestWindows[tonumber(playerId) or 0] = nil
 	end)
 end
 

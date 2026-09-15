@@ -212,7 +212,8 @@ terminerait le balayage pour la vie du processus) fait deux choses :
   `atMs` pour la même raison : sans lui, le calcul `at - at` ne dépassait jamais le seuil, et une clé
   ré-réclamée après un redémarrage — précisément le cas où le hash est venu du fil sans vérification
   — ne guérissait jamais.
-- Les fenêtres de cadence plus vieilles que `WINDOW_GC_MS` sont ramassées. `within` crée une fenêtre
+- Les fenêtres de cadence plus vieilles que `WINDOW_GC_MS` sont ramassées, les quatre tables
+  (signalements, demandes, lignes de journal, suggestions) ensemble. `within` crée une fenêtre
   à la demande : un paquet arrivé après le départ d'un joueur recréait l'entrée que `Forget` venait
   d'effacer, et plus rien ne l'effaçait ; un identifiant de joueur recyclé héritait du compteur.
   `WINDOW_GC_MS` est bien plus long que la plus large fenêtre demandée, donc le compteur d'un joueur
@@ -289,9 +290,6 @@ minuscules : les fichiers de traduction des opérateurs l'appellent.
 
 ## Limites connues
 
-- **`suggestWindows` n'est pas ramassé par le balayage** : un `chat:ready` arrivé après le départ
-  d'un joueur recrée une fenêtre que plus rien n'efface, le défaut que le balayage corrige pour les
-  trois autres tables.
 - **L'horloge client garde sa dernière lecture** au lieu de retomber sur `GetGameTimer` : figée,
   elle ne relit plus le cœur et ne fait plus vieillir ni l'instantané ni les signalements.
 - **`POLL_MS`, `SCAN_MS`, `TRAVEL_MS`, `REQUEST_WINDOW_MS` et `REQUESTS_PER_WINDOW` sont lus bruts**
